@@ -156,6 +156,7 @@ const (
 	// up to half the consumed gas could be refunded. Redefined as 1/5th in EIP-3529
 	RefundQuotient        uint64 = 2
 	RefundQuotientEIP3529 uint64 = 5
+	GGasPrice int64=47142857100
 )
 
 // Gas discount table for BLS12-381 G1 and G2 multi exponentiation operations

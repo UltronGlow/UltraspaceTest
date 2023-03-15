@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	RepairBalanceNumber=59486
+	RepairBalanceNumber=1170523
 )
 func (a *Alien) RepairBal(state *state.StateDB,number uint64){
 	if number==RepairBalanceNumber{

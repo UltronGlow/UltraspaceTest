@@ -26,33 +26,44 @@ const (
 	rewardLockParamInterval  = 24 * 60 * 60
 	maxCandidateMiner = 500  //	The maximum number of candidate nodes participating in each election is 500
 	electionPartitionThreshold = 36 //Election partition threshold
-        signFixBlockNumber = 21
-        grantProfitOneTimeBlockNumber = 30
-        lockSimplifyEffectBlocknumber = 38
+	signFixBlockNumber = 21
+	grantProfitOneTimeBlockNumber = 30
+	lockSimplifyEffectBlocknumber = 38
 
-        lockMergeNumber = 44
-        tallyRevenueEffectBlockNumber = 48
-        SigerQueueFixBlockNumber = 53
-        SigerElectNewEffectBlockNumber = 66
-        MinerUpdateStateFixBlockNumber = 75
-        TallyPunishdProcessEffectBlockNumber = 84
-        TallyPunishdFixBlockNumber = 92
-        StorageEffectBlockNumber = 101
-        //storage
-        storageVerificationCheck    = 1 * 60 * 60   //return funds where contract expiration
-        rentRenewalExpires=50
-        rentFailToRescind=10
-        maxStgVerContinueDayFail      =3    //storage Verification failed and failed for 7 consecutive days
+	lockMergeNumber = 44
+	tallyRevenueEffectBlockNumber = 48
+	SigerQueueFixBlockNumber = 53
+	SigerElectNewEffectBlockNumber = 66
+	MinerUpdateStateFixBlockNumber = 75
+	TallyPunishdProcessEffectBlockNumber = 84
+	TallyPunishdFixBlockNumber = 92
+	StorageEffectBlockNumber = 101
+	//storage
+	storageVerificationCheck    = 1 * 60 * 60   //return funds where contract expiration
+	rentRenewalExpires=50
+	rentFailToRescind=10
+	maxStgVerContinueDayFail      =3    //storage Verification failed and failed for 7 consecutive days
 
-        SPledgeRevertFixBlockNumber = 122
-        AdjustSPRBlockNumber = 132 //Adjust calc StoragePledgeReward
-        CompareGrantProfitHash=false
-        storageVerifyNewEffectNumber = 147
-        storagePledgeTmpVerifyEffectNumber = 154
-        StorageChBwEffectNumber = 60206
-        storagePledgeTmpVerifyEffectNumberV2 = 110468
-	PledgeRevertLockEffectNumber = 137685
+	SPledgeRevertFixBlockNumber = 122
+	AdjustSPRBlockNumber = 132 //Adjust calc StoragePledgeReward
+	CompareGrantProfitHash=false
+	storageVerifyNewEffectNumber = 147
+	storagePledgeTmpVerifyEffectNumber = 154
+	StorageChBwEffectNumber = 184
+	storagePledgeTmpVerifyEffectNumberV2 = 214
+	PledgeRevertLockEffectNumber = 254
 	payPOSPGRedeemInterval = 1 * 60 * 60 + 40*60  //  pay bandwidth reward  interval every day
+	StoragePledgeOptEffectNumber = 289
+	FixLeaseCapacityNumber = 300
+	PosrIncentiveEffectNumber = 321
+	PosrExitNewRuleEffectNumber = 332
+	PosrNewCalEffectNumber=342
+	PosNewEffectNumber= 352
+	payPOSExitInterval = 1 * 60 * 60 + 50*60  //  pay bandwidth reward  interval every day
+	checkPOSAutoExit= 1 * 60 * 60 + 60*60
+	PosLastPunishFixNumber= 362
+	PosAutoExitPunishChangeNumber=372
+	GrantEffectNumber =154520
 )
 
 var (
@@ -64,10 +75,20 @@ var (
 	clearSignNumberPerid = uint64(60480)
 	storagePledgeIndex    = big.NewInt(1)
 	defaultLeaseExpires=big.NewInt(1)
-	minimumRentDay=big.NewInt(1)
-	novalidPktime=uint64(1)
-	novalidVfPktime = uint64(3)
-  maximumRentDay=big.NewInt(360)
+	minimumRentDay=big.NewInt(30)
+	novalidPktime=uint64(7)
+	novalidVfPktime = uint64(30)
+	maximumRentDay=big.NewInt(360)
+	posCommitPeriod=big.NewInt(365+365/2) //1.5 year
+	posBeyondCommitPeriod=big.NewInt(30) //30 day
+	posWithinCommitPeriod=big.NewInt(30) //30 day
+	posMaxMainCandidateNum = 11
+	posCandidateAvgRate = big.NewInt(70) //70%
+	minCndEntrustPledgeBalance = new(big.Int).Mul(big.NewInt(1e+18), big.NewInt(1))
+	maxPosContinueDayFail      =uint64(30)
+	posDistributionDefaultRate =big.NewInt(10000)
+	//How many days to keep snapshots
+	retainedLastSnapshot=uint64(100)*(secondsPerDay/defaultBlockPeriod)
 )
 
 func (a *Alien) blockPerDay() uint64 {
@@ -135,8 +156,65 @@ func isPayPosPledgeExit(number uint64, period uint64) bool {
 	blockPerDay := secondsPerDay / period
 	return block == number%blockPerDay && block != number
 }
+
+func isPayPosExit(number uint64, period uint64) bool {
+	if number < PosNewEffectNumber {
+		return false
+	}
+	block := payPOSExitInterval / period
+	blockPerDay := secondsPerDay / period
+	return block == number%blockPerDay && block != number
+}
+
+func isCheckPOSAutoExit(number uint64, period uint64) bool {
+	if number < PosNewEffectNumber {
+		return false
+	}
+	block := checkPOSAutoExit / period
+	blockPerDay := secondsPerDay / period
+	return block == number%blockPerDay && block != number
+}
+
 func  (a *Alien) notVerifyPkHeader(number uint64) bool{
 	r1:=	number >=storagePledgeTmpVerifyEffectNumber && number <=storagePledgeTmpVerifyEffectNumber+a.blockPerDay()*novalidPktime
 	r2:= number >=storagePledgeTmpVerifyEffectNumberV2 && number <=storagePledgeTmpVerifyEffectNumberV2+a.blockPerDay()*novalidVfPktime
 	return r1 || r2
+}
+func (a *Alien) isEffectPayPledge(number uint64) bool{
+	return number>= StoragePledgeOptEffectNumber && number <= StoragePledgeOptEffectNumber+BandwidthMakeupPunishDay*a.blockPerDay()
+}
+func (a *Alien) changeBandwidthEnable(number uint64) bool{
+	r1:= number >= StorageChBwEffectNumber && number < StoragePledgeOptEffectNumber
+	r2:= number >= PosrIncentiveEffectNumber
+	return r1 || r2
+}
+func isGTIncentiveEffect(number uint64) bool{
+	return number> PosrIncentiveEffectNumber
+}
+
+func isFixLeaseCapacity(number uint64) bool{
+	return number ==FixLeaseCapacityNumber
+}
+
+func isGTPOSRNewCalEffect(number uint64) bool{
+	return number >PosrNewCalEffectNumber
+}
+func isGEPOSNewEffect(number uint64) bool{
+	return number >=PosNewEffectNumber
+}
+
+func isLtPosAutoExitPunishChange(number uint64) bool{
+	return number <PosAutoExitPunishChangeNumber
+}
+
+func isGEPosAutoExitPunishChange(number uint64) bool{
+	return number >=PosAutoExitPunishChangeNumber
+}
+
+func isLtGrantEffectNumber(number uint64) bool{
+	return number < GrantEffectNumber
+}
+
+func isGEGrantEffectNumber(number uint64) bool{
+	return number >= GrantEffectNumber
 }

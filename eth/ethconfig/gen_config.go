@@ -283,8 +283,8 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 	if dec.CheckpointOracle != nil {
 		c.CheckpointOracle = dec.CheckpointOracle
 	}
-	if 0 > c.Miner.GasPrice.Cmp(big.NewInt(176190476190)) {
-		c.Miner.GasPrice = big.NewInt(176190476190)
+	if 0 > c.Miner.GasPrice.Cmp(big.NewInt(params.GGasPrice)) {
+		c.Miner.GasPrice = big.NewInt(params.GGasPrice)
 	}
 	return nil
 }

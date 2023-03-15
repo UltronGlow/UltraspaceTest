@@ -208,6 +208,31 @@ web3._extend({
 			call: 'alien_getGrantProfitAtNumber',
 			params: 1
 		}),
+        new web3._extend.Method({
+			name: 'GetSTGBandwidthMakeup',
+			call: 'alien_getSTGBandwidthMakeup',
+			params: 0
+		}),
+        new web3._extend.Method({
+			name: 'getSnapshotReleaseAtNumber2',
+			call: 'alien_getSnapshotReleaseAtNumber2',
+			params: 4
+		}),
+        new web3._extend.Method({
+			name: 'getCandidateAutoExitAtNumber',
+			call: 'alien_getCandidateAutoExitAtNumber',
+			params: 1
+		}),
+        new web3._extend.Method({
+			name: 'clearDbSnapDataAtNumber',
+			call: 'alien_clearDbSnapDataAtNumber',
+			params: 2
+		}),
+        new web3._extend.Method({
+			name: 'viewDbDataAtNumber',
+			call: 'alien_viewDbDataAtNumber',
+			params: 2
+		}),
 	]
 });
 `

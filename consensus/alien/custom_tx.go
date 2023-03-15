@@ -66,6 +66,9 @@ const (
 	nfcCategoryCandPnsh   = "CandPnsh"
 	nfcCategoryFlwReq     = "FlwReq"
 	nfcCategoryFlwExit    = "FlwExit"
+	categoryCandEntrust   = "CandEntrust"
+	categoryCandEntrustExit = "CandETExit"
+	categoryCandChangeRate = "CandChaRate"
 
 	sscCategoryExchRate   = "ExchRate"
 	sscCategoryDeposit    = "Deposit"
@@ -124,6 +127,7 @@ const (
 	sscEnumFlwReward        = 4
 	sscEnumBandwidthReward        = 5
 	sscEnumStoragePledgeRedeemLock = 6
+	sscEnumPosExitLock = 7
 	sscEnumMiner          = 10000
 	sscEnumBndwdthClaimed = 0
 	sscEnumBndwdthPunish  = 1
@@ -138,6 +142,9 @@ const (
 	sscEnumLeaseExpires = 7
 	sscEnumMinimumRent  = 8
 	sscEnumMaximumRent=11
+	sscEnumPosCommitPeriod=12
+	sscEnumPosBeyondCommitPeriod=13
+	sscEnumPosWithinCommitPeriod=14
 	/*
 	 *  proposal type
 	 */
@@ -341,9 +348,203 @@ type ConfigDepositRecord struct {
 	Amount *big.Int
 }
 
+type CandidatePledgeNewRecord struct {
+	Target common.Address
+	Amount *big.Int
+	Manager common.Address
+	Hash common.Hash
+}
+
+type CandidatePledgeEntrustRecord struct {
+	Target common.Address
+	Amount *big.Int
+	Address common.Address
+	Hash common.Hash
+}
+type CandidatePEntrustExitRecord struct {
+	Target common.Address
+	Hash common.Hash
+	Address common.Address
+	Amount *big.Int
+}
+type CandidateChangeRateRecord struct {
+	Target common.Address
+	Rate *big.Int
+}
 // HeaderExtra is the struct of info in header.Extra[extraVanity:len(header.extra)-extraSeal]
 // HeaderExtra is the current struct
 type HeaderExtra struct {
+	CurrentBlockConfirmations []Confirmation
+	CurrentBlockVotes         []Vote
+	CurrentBlockProposals     []Proposal
+	CurrentBlockDeclares      []Declare
+	ModifyPredecessorVotes    []Vote
+	LoopStartTime             uint64
+	SignerQueue               []common.Address
+	SignerMissing             []common.Address
+	ConfirmedBlockNumber      uint64
+	SideChainConfirmations    []SCConfirmation
+	SideChainSetCoinbases     []SCSetCoinbase
+	SideChainNoticeConfirmed  []SCConfirmation
+	SideChainCharging         []GasCharging //This only exist in side chain's header.Extra
+
+	ExchangeNFC               []ExchangeNFCRecord
+	DeviceBind                []DeviceBindRecord
+	CandidatePledge           []CandidatePledgeRecord
+	CandidatePunish           []CandidatePunishRecord
+	MinerStake                []MinerStakeRecord
+	CandidateExit             []common.Address
+	ClaimedBandwidth          []ClaimedBandwidthRecord
+	FlowMinerExit             []common.Address
+	BandwidthPunish           []BandwidthPunishRecord
+	ConfigExchRate            uint32
+	ConfigOffLine             uint32
+	ConfigDeposit             []ConfigDepositRecord
+	ConfigISPQOS              []ISPQOSRecord
+	LockParameters            []LockParameterRecord
+	ManagerAddress            []ManagerAddressRecord
+	FlowHarvest               *big.Int
+	LockReward                []LockRewardRecord
+	GrantProfit               []consensus.GrantProfitRecord
+	FlowReport                []MinerFlowReportRecord
+
+	StoragePledge       [] SPledgeRecord
+	StoragePledgeExit   [] SPledgeExitRecord
+	LeaseRequest        []LeaseRequestRecord
+	ExchangeSRT         []ExchangeSRTRecord
+	LeasePledge         []LeasePledgeRecord
+	LeaseRenewal        []LeaseRenewalRecord
+	LeaseRenewalPledge  []LeaseRenewalPledgeRecord
+	LeaseRescind        []LeaseRescindRecord
+	StorageRecoveryData [] SPledgeRecoveryRecord
+	StorageProofRecord  [] StorageProofRecord
+
+	StorageExchangePrice [] StorageExchangePriceRecord
+	ExtraStateRoot common.Hash
+	LockAccountsRoot common.Hash
+	StorageDataRoot common.Hash
+	StorageExchangeBw []StorageExchangeBwRecord
+	SRTDataRoot common.Hash
+	StorageBwPay [] StorageBwPayRecord
+	GrantProfitHash common.Hash
+	CandidatePledgeNew []CandidatePledgeNewRecord
+	CandidatePledgeEntrust []CandidatePledgeEntrustRecord
+	CandidatePEntrustExit  []CandidatePEntrustExitRecord
+	CandidateAutoExit      []common.Address
+	CandidateChangeRate    []CandidateChangeRateRecord
+}
+
+type HeaderExtraV5 struct {
+	CurrentBlockConfirmations []Confirmation
+	CurrentBlockVotes         []Vote
+	CurrentBlockProposals     []Proposal
+	CurrentBlockDeclares      []Declare
+	ModifyPredecessorVotes    []Vote
+	LoopStartTime             uint64
+	SignerQueue               []common.Address
+	SignerMissing             []common.Address
+	ConfirmedBlockNumber      uint64
+	SideChainConfirmations    []SCConfirmation
+	SideChainSetCoinbases     []SCSetCoinbase
+	SideChainNoticeConfirmed  []SCConfirmation
+	SideChainCharging         []GasCharging //This only exist in side chain's header.Extra
+
+	ExchangeNFC               []ExchangeNFCRecord
+	DeviceBind                []DeviceBindRecord
+	CandidatePledge           []CandidatePledgeRecord
+	CandidatePunish           []CandidatePunishRecord
+	MinerStake                []MinerStakeRecord
+	CandidateExit             []common.Address
+	ClaimedBandwidth          []ClaimedBandwidthRecord
+	FlowMinerExit             []common.Address
+	BandwidthPunish           []BandwidthPunishRecord
+	ConfigExchRate            uint32
+	ConfigOffLine             uint32
+	ConfigDeposit             []ConfigDepositRecord
+	ConfigISPQOS              []ISPQOSRecord
+	LockParameters            []LockParameterRecord
+	ManagerAddress            []ManagerAddressRecord
+	FlowHarvest               *big.Int
+	LockReward                []LockRewardRecord
+	GrantProfit               []consensus.GrantProfitRecord
+	FlowReport                []MinerFlowReportRecord
+
+	StoragePledge       [] SPledgeRecord
+	StoragePledgeExit   [] SPledgeExitRecord
+	LeaseRequest        []LeaseRequestRecord
+	ExchangeSRT         []ExchangeSRTRecord
+	LeasePledge         []LeasePledgeRecord
+	LeaseRenewal        []LeaseRenewalRecord
+	LeaseRenewalPledge  []LeaseRenewalPledgeRecord
+	LeaseRescind        []LeaseRescindRecord
+	StorageRecoveryData [] SPledgeRecoveryRecord
+	StorageProofRecord  [] StorageProofRecord
+
+	StorageExchangePrice [] StorageExchangePriceRecord
+	ExtraStateRoot common.Hash
+	LockAccountsRoot common.Hash
+	StorageDataRoot common.Hash
+	StorageExchangeBw []StorageExchangeBwRecord
+	SRTDataRoot common.Hash
+	StorageBwPay [] StorageBwPayRecord
+	GrantProfitHash common.Hash
+}
+
+type StorageHeaderExtraV4 struct {
+	CurrentBlockConfirmations []Confirmation
+	CurrentBlockVotes         []Vote
+	CurrentBlockProposals     []Proposal
+	CurrentBlockDeclares      []Declare
+	ModifyPredecessorVotes    []Vote
+	LoopStartTime             uint64
+	SignerQueue               []common.Address
+	SignerMissing             []common.Address
+	ConfirmedBlockNumber      uint64
+	SideChainConfirmations    []SCConfirmation
+	SideChainSetCoinbases     []SCSetCoinbase
+	SideChainNoticeConfirmed  []SCConfirmation
+	SideChainCharging         []GasCharging //This only exist in side chain's header.Extra
+
+	ExchangeNFC               []ExchangeNFCRecord
+	DeviceBind                []DeviceBindRecord
+	CandidatePledge           []CandidatePledgeRecord
+	CandidatePunish           []CandidatePunishRecord
+	MinerStake                []MinerStakeRecord
+	CandidateExit             []common.Address
+	ClaimedBandwidth          []ClaimedBandwidthRecord
+	FlowMinerExit             []common.Address
+	BandwidthPunish           []BandwidthPunishRecord
+	ConfigExchRate            uint32
+	ConfigOffLine             uint32
+	ConfigDeposit             []ConfigDepositRecord
+	ConfigISPQOS              []ISPQOSRecord
+	LockParameters            []LockParameterRecord
+	ManagerAddress            []ManagerAddressRecord
+	FlowHarvest               *big.Int
+	LockReward                []LockRewardRecord
+	GrantProfit               []consensus.GrantProfitRecord
+	FlowReport                []MinerFlowReportRecord
+
+	StoragePledge       [] SPledgeRecord
+	StoragePledgeExit   [] SPledgeExitRecord
+	LeaseRequest        []LeaseRequestRecord
+	ExchangeSRT         []ExchangeSRTRecord
+	LeasePledge         []LeasePledgeRecord
+	LeaseRenewal        []LeaseRenewalRecord
+	LeaseRenewalPledge  []LeaseRenewalPledgeRecord
+	LeaseRescind        []LeaseRescindRecord
+	StorageRecoveryData [] SPledgeRecoveryRecord
+	StorageProofRecord  [] StorageProofRecord
+
+	StorageExchangePrice [] StorageExchangePriceRecord
+	ExtraStateRoot common.Hash
+	LockAccountsRoot common.Hash
+	StorageDataRoot common.Hash
+	StorageExchangeBw []StorageExchangeBwRecord
+	SRTDataRoot common.Hash
+	StorageBwPay [] StorageBwPayRecord
+}
+type StorageHeaderExtraV3 struct {
 	CurrentBlockConfirmations []Confirmation
 	CurrentBlockVotes         []Vote
 	CurrentBlockProposals     []Proposal
@@ -720,6 +921,165 @@ func encodeHeaderExtra(config *params.AlienConfig, number *big.Int, val HeaderEx
 				StorageExchangeBw:val.StorageExchangeBw,
 			}
 			return rlp.EncodeToBytes(headerExtrav2)
+		}else if number.Uint64() <StoragePledgeOptEffectNumber{
+			headerExtrav3:=StorageHeaderExtraV3{
+				CurrentBlockConfirmations :val.CurrentBlockConfirmations,
+				CurrentBlockVotes:val.CurrentBlockVotes,
+				CurrentBlockProposals:val.CurrentBlockProposals,
+				CurrentBlockDeclares:val.CurrentBlockDeclares,
+				ModifyPredecessorVotes:val.ModifyPredecessorVotes,
+				LoopStartTime:val.LoopStartTime,
+				SignerQueue:val.SignerQueue,
+				SignerMissing:val.SignerMissing,
+				ConfirmedBlockNumber:val.ConfirmedBlockNumber,
+				SideChainConfirmations:val.SideChainConfirmations,
+				SideChainSetCoinbases:val.SideChainSetCoinbases,
+				SideChainNoticeConfirmed:val.SideChainNoticeConfirmed,
+				SideChainCharging:val.SideChainCharging,
+				ExchangeNFC:val.ExchangeNFC,
+				DeviceBind :val.DeviceBind,
+				CandidatePledge:val.CandidatePledge,
+				CandidatePunish:val.CandidatePunish,
+				MinerStake:val.MinerStake,
+				CandidateExit:val.CandidateExit,
+				ClaimedBandwidth:val.ClaimedBandwidth,
+				FlowMinerExit:val.FlowMinerExit,
+				BandwidthPunish:val.BandwidthPunish,
+				ConfigExchRate:val.ConfigExchRate,
+				ConfigOffLine:val.ConfigOffLine,
+				ConfigDeposit :val.ConfigDeposit,
+				ConfigISPQOS:val.ConfigISPQOS,
+				LockParameters:val.LockParameters,
+				ManagerAddress :val.ManagerAddress,
+				FlowHarvest:val.FlowHarvest,
+				LockReward :val.LockReward,
+				GrantProfit :val.GrantProfit,
+				FlowReport:val.FlowReport,
+				StoragePledge:val.StoragePledge,
+				StoragePledgeExit:val.StoragePledgeExit,
+				LeaseRequest:val.LeaseRequest,
+				ExchangeSRT:val.ExchangeSRT,
+				LeasePledge:val.LeasePledge,
+				LeaseRenewal:val.LeaseRenewal,
+				LeaseRenewalPledge:val.LeaseRenewalPledge,
+				LeaseRescind:val.LeaseRescind,
+				StorageRecoveryData:val.StorageRecoveryData,
+				StorageProofRecord :val.StorageProofRecord,
+				StorageExchangePrice:val.StorageExchangePrice,
+				ExtraStateRoot:val.ExtraStateRoot,
+				LockAccountsRoot:val.LockAccountsRoot,
+				StorageDataRoot:val.StorageDataRoot,
+				StorageExchangeBw:val.StorageExchangeBw,
+				SRTDataRoot: val.SRTDataRoot,
+			}
+			return rlp.EncodeToBytes(headerExtrav3)
+		}else if number.Uint64() <PosrIncentiveEffectNumber{
+			headerExtrav4:=StorageHeaderExtraV4{
+				CurrentBlockConfirmations :val.CurrentBlockConfirmations,
+				CurrentBlockVotes:val.CurrentBlockVotes,
+				CurrentBlockProposals:val.CurrentBlockProposals,
+				CurrentBlockDeclares:val.CurrentBlockDeclares,
+				ModifyPredecessorVotes:val.ModifyPredecessorVotes,
+				LoopStartTime:val.LoopStartTime,
+				SignerQueue:val.SignerQueue,
+				SignerMissing:val.SignerMissing,
+				ConfirmedBlockNumber:val.ConfirmedBlockNumber,
+				SideChainConfirmations:val.SideChainConfirmations,
+				SideChainSetCoinbases:val.SideChainSetCoinbases,
+				SideChainNoticeConfirmed:val.SideChainNoticeConfirmed,
+				SideChainCharging:val.SideChainCharging,
+				ExchangeNFC:val.ExchangeNFC,
+				DeviceBind :val.DeviceBind,
+				CandidatePledge:val.CandidatePledge,
+				CandidatePunish:val.CandidatePunish,
+				MinerStake:val.MinerStake,
+				CandidateExit:val.CandidateExit,
+				ClaimedBandwidth:val.ClaimedBandwidth,
+				FlowMinerExit:val.FlowMinerExit,
+				BandwidthPunish:val.BandwidthPunish,
+				ConfigExchRate:val.ConfigExchRate,
+				ConfigOffLine:val.ConfigOffLine,
+				ConfigDeposit :val.ConfigDeposit,
+				ConfigISPQOS:val.ConfigISPQOS,
+				LockParameters:val.LockParameters,
+				ManagerAddress :val.ManagerAddress,
+				FlowHarvest:val.FlowHarvest,
+				LockReward :val.LockReward,
+				GrantProfit :val.GrantProfit,
+				FlowReport:val.FlowReport,
+				StoragePledge:val.StoragePledge,
+				StoragePledgeExit:val.StoragePledgeExit,
+				LeaseRequest:val.LeaseRequest,
+				ExchangeSRT:val.ExchangeSRT,
+				LeasePledge:val.LeasePledge,
+				LeaseRenewal:val.LeaseRenewal,
+				LeaseRenewalPledge:val.LeaseRenewalPledge,
+				LeaseRescind:val.LeaseRescind,
+				StorageRecoveryData:val.StorageRecoveryData,
+				StorageProofRecord :val.StorageProofRecord,
+				StorageExchangePrice:val.StorageExchangePrice,
+				ExtraStateRoot:val.ExtraStateRoot,
+				LockAccountsRoot:val.LockAccountsRoot,
+				StorageDataRoot:val.StorageDataRoot,
+				StorageExchangeBw:val.StorageExchangeBw,
+				SRTDataRoot: val.SRTDataRoot,
+				StorageBwPay:val.StorageBwPay,
+			}
+			return rlp.EncodeToBytes(headerExtrav4)
+		}else if number.Uint64() <PosNewEffectNumber{
+			headerExtrav5:=HeaderExtraV5{
+				CurrentBlockConfirmations :val.CurrentBlockConfirmations,
+				CurrentBlockVotes:val.CurrentBlockVotes,
+				CurrentBlockProposals:val.CurrentBlockProposals,
+				CurrentBlockDeclares:val.CurrentBlockDeclares,
+				ModifyPredecessorVotes:val.ModifyPredecessorVotes,
+				LoopStartTime:val.LoopStartTime,
+				SignerQueue:val.SignerQueue,
+				SignerMissing:val.SignerMissing,
+				ConfirmedBlockNumber:val.ConfirmedBlockNumber,
+				SideChainConfirmations:val.SideChainConfirmations,
+				SideChainSetCoinbases:val.SideChainSetCoinbases,
+				SideChainNoticeConfirmed:val.SideChainNoticeConfirmed,
+				SideChainCharging:val.SideChainCharging,
+				ExchangeNFC:val.ExchangeNFC,
+				DeviceBind :val.DeviceBind,
+				CandidatePledge:val.CandidatePledge,
+				CandidatePunish:val.CandidatePunish,
+				MinerStake:val.MinerStake,
+				CandidateExit:val.CandidateExit,
+				ClaimedBandwidth:val.ClaimedBandwidth,
+				FlowMinerExit:val.FlowMinerExit,
+				BandwidthPunish:val.BandwidthPunish,
+				ConfigExchRate:val.ConfigExchRate,
+				ConfigOffLine:val.ConfigOffLine,
+				ConfigDeposit :val.ConfigDeposit,
+				ConfigISPQOS:val.ConfigISPQOS,
+				LockParameters:val.LockParameters,
+				ManagerAddress :val.ManagerAddress,
+				FlowHarvest:val.FlowHarvest,
+				LockReward :val.LockReward,
+				GrantProfit :val.GrantProfit,
+				FlowReport:val.FlowReport,
+				StoragePledge:val.StoragePledge,
+				StoragePledgeExit:val.StoragePledgeExit,
+				LeaseRequest:val.LeaseRequest,
+				ExchangeSRT:val.ExchangeSRT,
+				LeasePledge:val.LeasePledge,
+				LeaseRenewal:val.LeaseRenewal,
+				LeaseRenewalPledge:val.LeaseRenewalPledge,
+				LeaseRescind:val.LeaseRescind,
+				StorageRecoveryData:val.StorageRecoveryData,
+				StorageProofRecord :val.StorageProofRecord,
+				StorageExchangePrice:val.StorageExchangePrice,
+				ExtraStateRoot:val.ExtraStateRoot,
+				LockAccountsRoot:val.LockAccountsRoot,
+				StorageDataRoot:val.StorageDataRoot,
+				StorageExchangeBw:val.StorageExchangeBw,
+				SRTDataRoot: val.SRTDataRoot,
+				StorageBwPay:val.StorageBwPay,
+				GrantProfitHash:val.GrantProfitHash,
+			}
+			return rlp.EncodeToBytes(headerExtrav5)
 		} else{
 			headerExtra = val
 		}
@@ -866,11 +1226,19 @@ func (a *Alien) processCustomTx(headerExtra HeaderExtra, chain consensus.ChainHe
 						} else if txDataInfo[posCategory] == nfcCategoryRebind {
 							headerExtra.DeviceBind = a.processDeviceRebind (headerExtra.DeviceBind, txDataInfo, txSender, tx, receipts, state, snapCache,number)
 						} else if txDataInfo[posCategory] == nfcCategoryCandReq {
-							headerExtra.CandidatePledge = a.processCandidatePledge (headerExtra.CandidatePledge, txDataInfo, txSender, tx, receipts, state, snapCache)
+							if isGEPOSNewEffect(number){
+								headerExtra.CandidatePledgeNew= a.processCandidatePledgeNew(headerExtra.CandidatePledgeNew,txDataInfo,txSender,tx,receipts,state,snap,number)
+							}else{
+								headerExtra.CandidatePledge = a.processCandidatePledge (headerExtra.CandidatePledge, txDataInfo, txSender, tx, receipts, state, snapCache)
+							}
 						} else if txDataInfo[posCategory] == nfcCategoryCandExit {
-							headerExtra.CandidateExit = a.processCandidateExit (headerExtra.CandidateExit, txDataInfo, txSender, tx, receipts, state, snapCache)
+							if isGEPOSNewEffect(number){
+								headerExtra.CandidatePEntrustExit,headerExtra.CandidateExit = a.processCandidateExitNew (headerExtra.CandidatePEntrustExit,headerExtra.CandidateExit, txDataInfo, txSender, tx, receipts, state, snapCache,number)
+							}else{
+								headerExtra.CandidateExit = a.processCandidateExit (headerExtra.CandidateExit, txDataInfo, txSender, tx, receipts, state, snapCache)
+							}
 						} else if txDataInfo[posCategory] == nfcCategoryCandPnsh {
-							headerExtra.CandidatePunish = a.processCandidatePunish (headerExtra.CandidatePunish, txDataInfo, txSender, tx, receipts, state, snapCache)
+							headerExtra.CandidatePunish = a.processCandidatePunish (headerExtra.CandidatePunish, txDataInfo, txSender, tx, receipts, state, snapCache, number)
 						} else if txDataInfo[posCategory] == nfcCategoryFlwReq {
 							if number<PledgeRevertLockEffectNumber{
 								headerExtra.ClaimedBandwidth = a.processMinerPledge (headerExtra.ClaimedBandwidth, txDataInfo, txSender, tx, receipts, state, snapCache)
@@ -881,6 +1249,17 @@ func (a *Alien) processCustomTx(headerExtra HeaderExtra, chain consensus.ChainHe
 						if header.Number.Uint64() > StorageEffectBlockNumber {
 							headerExtra=a.processStorageCustomTx(txDataInfo,headerExtra,txSender, tx, receipts, snapCache, header.Number,state,chain)
                         }
+						if isGEPOSNewEffect(number) {
+						  if txDataInfo[posCategory] == categoryCandEntrust {
+							  headerExtra.CandidatePledgeEntrust = a.processCandidatePledgeEntrust(headerExtra.CandidatePledgeEntrust, txDataInfo, txSender, tx, receipts, state, snap, number)
+						  }
+						  if txDataInfo[posCategory] == categoryCandEntrustExit {
+							  headerExtra.CandidatePEntrustExit= a.processCandidatePEntrustExit(headerExtra.CandidatePEntrustExit,txDataInfo,txSender,tx,receipts,state,snap,number)
+						  }
+						  if txDataInfo[posCategory] == categoryCandChangeRate {
+								headerExtra.CandidateChangeRate= a.processCandidateChangeRate(headerExtra.CandidateChangeRate,txDataInfo,txSender,tx,receipts,state,snap,number)
+						  }
+						}
 					}
 				}  else if txDataInfo[posPrefix] == sscPrefix {
 					if txDataInfo[posVersion] == ufoVersion {
@@ -1396,6 +1775,11 @@ func (a *Alien) processDeviceBind(currentDeviceBind []DeviceBindRecord, txDataIn
 				log.Warn("Device bind revenue", "device already bond", txDataInfo[nfcPosMinerAddress])
 				return currentDeviceBind
 			}
+			if isGEPOSNewEffect(number) {
+				if !a.isPosManager(snap,deviceBind,txSender,txDataInfo){
+					return currentDeviceBind
+				}
+			}
 		} else {
 			if number >=StorageEffectBlockNumber {
 				if _, ok := snap.RevenueStorage[deviceBind.Device]; ok {
@@ -1511,9 +1895,15 @@ func (a *Alien) processDeviceUnbind(currentDeviceBind []DeviceBindRecord, txData
 				return currentDeviceBind
 			} else {
 				if oldBind.MultiSignature == nilHash || oldBind.MultiSignature == zeroHash {
-					if oldBind.RevenueAddress != txSender {
-						log.Warn("Device unbind revenue", "revenue address", oldBind.RevenueAddress)
-						return currentDeviceBind
+					if isGEPOSNewEffect(number) {
+						if !a.isPosManager(snap,deviceBind,txSender,txDataInfo){
+							return currentDeviceBind
+						}
+					}else{
+						if oldBind.RevenueAddress != txSender {
+							log.Warn("Device unbind revenue", "revenue address", oldBind.RevenueAddress)
+							return currentDeviceBind
+						}
 					}
 				} else {
 					if !a.verifyMultiSignatureAddress(state, oldBind.MultiSignature, tx.AllSigners()) {
@@ -1609,21 +1999,32 @@ func (a *Alien) processDeviceRebind(currentDeviceBind []DeviceBindRecord, txData
 	}
 	if revenueType, err := strconv.ParseUint(txDataInfo[nfcPosRevenueType], 10, 32); err == nil {
 		if revenueType == 0 {
-			if oldBind, ok := snap.RevenueNormal[deviceBind.Device]; ok {
-				if oldBind.MultiSignature == nilHash || oldBind.MultiSignature == zeroHash {
-					if oldBind.RevenueAddress != txSender {
-						log.Warn("Device rebind revenue", "revenue address", oldBind.RevenueAddress)
+			if isGEPOSNewEffect(number) {
+				if _, ok := snap.RevenueNormal[deviceBind.Device]; ok {
+					if !a.isPosManager(snap,deviceBind,txSender,txDataInfo){
 						return currentDeviceBind
 					}
-				} else {
-					if !a.verifyMultiSignatureAddress(state, oldBind.MultiSignature, tx.AllSigners()) {
-						log.Warn("Device rebind revenue failed to verify multi-signature")
-						return currentDeviceBind
-					}
+				}else{
+					log.Warn("Device rebind revenue", "device cnnnot bind", deviceBind.Revenue)
+					return currentDeviceBind
 				}
-			} else if deviceBind.Revenue != txSender {
-				log.Warn("Device rebind revenue", "device cnnnot bind", deviceBind.Revenue)
-				return currentDeviceBind
+			}else{
+				if oldBind, ok := snap.RevenueNormal[deviceBind.Device]; ok {
+					if oldBind.MultiSignature == nilHash || oldBind.MultiSignature == zeroHash {
+						if oldBind.RevenueAddress != txSender {
+							log.Warn("Device rebind revenue", "revenue address", oldBind.RevenueAddress)
+							return currentDeviceBind
+						}
+					} else {
+						if !a.verifyMultiSignatureAddress(state, oldBind.MultiSignature, tx.AllSigners()) {
+							log.Warn("Device rebind revenue failed to verify multi-signature")
+							return currentDeviceBind
+						}
+					}
+				} else if deviceBind.Revenue != txSender {
+					log.Warn("Device rebind revenue", "device cnnnot bind", deviceBind.Revenue)
+					return currentDeviceBind
+				}
 			}
 		} else {
 			if number >=StorageEffectBlockNumber {
@@ -1772,6 +2173,72 @@ func (a *Alien) processCandidatePledge (currentCandidatePledge []CandidatePledge
 	return currentCandidatePledge
 }
 
+func (a *Alien) processCandidatePledgeNew(currentCandidatePledge []CandidatePledgeNewRecord, txDataInfo []string, txSender common.Address, tx *types.Transaction, receipts []*types.Receipt, state *state.StateDB, snap *Snapshot, number uint64) []CandidatePledgeNewRecord {
+	if len(txDataInfo) <= nfcPosMinerAddress {
+		log.Warn("Candidate pledgeNew", "parameter number", len(txDataInfo))
+		return currentCandidatePledge
+	}
+	candidatePledge := CandidatePledgeNewRecord{
+		Target: common.Address{},
+		Amount: new(big.Int).Set(minCndPledgeBalance),
+		Manager: txSender,
+		Hash: tx.Hash(),
+	}
+	if deposit, ok := snap.SystemConfig.Deposit[0]; ok {
+		candidatePledge.Amount = new(big.Int).Set(deposit)
+	}
+	if err := candidatePledge.Target.UnmarshalText1([]byte(txDataInfo[nfcPosMinerAddress])); err != nil {
+		log.Warn("Candidate pledgeNew", "miner address", txDataInfo[nfcPosMinerAddress])
+		return currentCandidatePledge
+	}
+	if  candidatePledge.Target==txSender {
+		log.Warn("Candidate pledgeNew", "miner address is txSender", candidatePledge.Target)
+		return currentCandidatePledge
+	}
+
+	if _, ok := snap.PosPledge[candidatePledge.Target]; ok {
+		log.Warn("Candidate pledgeNew", "candidate already exist", candidatePledge.Target)
+		return currentCandidatePledge
+	}
+
+	targetMiner:=snap.findPosTargetMiner(candidatePledge.Manager)
+	nilAddr := common.Address{}
+	if targetMiner!=nilAddr{
+		log.Warn("Candidate pledgeNew", "one address can only pledge one miner ", targetMiner)
+		return currentCandidatePledge
+	}
+	entrustMiner:=snap.findPosTargetMiner(candidatePledge.Target)
+	if entrustMiner!=nilAddr{
+		log.Warn("Candidate pledgeNew", "miner has pledge one miner ", candidatePledge.Target)
+		return currentCandidatePledge
+	}
+
+	if snap.isPosMinerManager(candidatePledge.Manager){
+		log.Warn("Candidate pledgeNew", "manager is pos manager", candidatePledge.Manager)
+		return currentCandidatePledge
+	}
+
+	if snap.isPosMinerManager(candidatePledge.Target){
+		log.Warn("Candidate pledgeNew", "miner is pos manager", candidatePledge.Target)
+		return currentCandidatePledge
+	}
+
+	if state.GetBalance(txSender).Cmp(candidatePledge.Amount) < 0 {
+		log.Warn("Candidate pledgeNew", "balance", state.GetBalance(txSender))
+		return currentCandidatePledge
+	}
+	state.SubBalance(txSender, candidatePledge.Amount)
+	topics := make([]common.Hash, 3)
+	topics[0].UnmarshalText([]byte("0x61edf63329be99ab5b931ab93890ea08164175f1bce7446645ba4c1c7bdae3a8")) //web3.sha3("PledgeLock(address,uint256)")
+	topics[1].SetBytes(candidatePledge.Target.Bytes())
+	topics[2].SetBytes(big.NewInt(sscEnumCndLock).Bytes())
+	data := common.Hash{}
+	data.SetBytes(candidatePledge.Amount.Bytes())
+	a.addCustomerTxLog (tx, receipts, topics, data.Bytes())
+	currentCandidatePledge = append(currentCandidatePledge, candidatePledge)
+	return currentCandidatePledge
+}
+
 func (a *Alien) processCandidateExit (currentCandidateExit []common.Address, txDataInfo []string, txSender common.Address, tx *types.Transaction, receipts []*types.Receipt, state *state.StateDB, snap *Snapshot) []common.Address {
 	if len(txDataInfo) <= nfcPosMinerAddress {
 		log.Warn("Candidate exit", "parameter number", len(txDataInfo))
@@ -1817,7 +2284,7 @@ func (a *Alien) processCandidateExit (currentCandidateExit []common.Address, txD
 	return currentCandidateExit
 }
 
-func (a *Alien) processCandidatePunish (currentCandidatePunish []CandidatePunishRecord, txDataInfo []string, txSender common.Address, tx *types.Transaction, receipts []*types.Receipt, state *state.StateDB, snap *Snapshot) []CandidatePunishRecord {
+func (a *Alien) processCandidatePunish(currentCandidatePunish []CandidatePunishRecord, txDataInfo []string, txSender common.Address, tx *types.Transaction, receipts []*types.Receipt, state *state.StateDB, snap *Snapshot, number uint64) []CandidatePunishRecord {
 	if len(txDataInfo) <= nfcPosMinerAddress {
 		log.Warn("Candidate punish", "parameter number", len(txDataInfo))
 		return currentCandidatePunish
@@ -1846,21 +2313,30 @@ func (a *Alien) processCandidatePunish (currentCandidatePunish []CandidatePunish
 		log.Warn("Candidate punish", "balance", state.GetBalance(txSender))
 		return currentCandidatePunish
 	}
-	   if pledgeItem, ok := snap.CandidatePledge[candidatePunish.Target]; !ok {
-		   if snap.Number < TallyPunishdProcessEffectBlockNumber {
-			   log.Warn("Candidate punish", "candidate isnot exist", candidatePunish.Target)
-			   return currentCandidatePunish
-		   }
-	   } else {
-		   if pledgeItem.StartHigh > 0 {
-			   log.Warn("Candidate punish", "candidate already exit", pledgeItem.StartHigh)
-			   return currentCandidatePunish
-		   }
-		   pledgeItem.Amount = new(big.Int).Add(pledgeItem.Amount, candidatePunish.Amount)
-	   }
-
+	if isGEPOSNewEffect(number){
+		if _, ok := snap.PosPledge[candidatePunish.Target]; !ok {
+			log.Warn("Candidate punish", "PosPledge candidate is not exist", candidatePunish.Target)
+			return currentCandidatePunish
+		}
+	}else{
+		if pledgeItem, ok := snap.CandidatePledge[candidatePunish.Target]; !ok {
+			if snap.Number < TallyPunishdProcessEffectBlockNumber {
+				log.Warn("Candidate punish", "candidate isnot exist", candidatePunish.Target)
+				return currentCandidatePunish
+			}
+		} else {
+			if pledgeItem.StartHigh > 0 {
+				log.Warn("Candidate punish", "candidate already exit", pledgeItem.StartHigh)
+				return currentCandidatePunish
+			}
+			pledgeItem.Amount = new(big.Int).Add(pledgeItem.Amount, candidatePunish.Amount)
+		}
+	}
 
 	state.SetBalance(txSender, new(big.Int).Sub(state.GetBalance(txSender), candidatePunish.Amount))
+	if isGEPOSNewEffect(number){
+		state.AddBalance(common.BigToAddress(big.NewInt(0)),candidatePunish.Amount)
+	}
 	topics := make([]common.Hash, 3)
 	topics[0].UnmarshalText([]byte("0xd67fe14bb06aa8656e0e7c3230831d68e8ce49bb4a4f71448f98a998d2674621")) //web3.sha3("PledgePunish(address,uint32)")
 	//topics[0].SetBytes([]byte("0xdf4d90e24a37f33947f5ab2aed37f938062b1b3dc6c7aa02fa5a2dcc8b8f5cf0"))
@@ -2403,4 +2879,283 @@ func (a *Alien) checkBindMaxStorageSpace(currentDeviceBind []DeviceBindRecord,de
 		}
 	}
 	return nil
+}
+
+func (a *Alien) processCandidatePledgeEntrust(currentCandidatePledge []CandidatePledgeEntrustRecord, txDataInfo []string, txSender common.Address, tx *types.Transaction, receipts []*types.Receipt, state *state.StateDB, snap *Snapshot, number uint64) []CandidatePledgeEntrustRecord {
+
+	if len(txDataInfo) <= 4 {
+		log.Warn("Candidate Entrust", "parameter number", len(txDataInfo))
+		return currentCandidatePledge
+	}
+	candidatePledge := CandidatePledgeEntrustRecord{
+		Target: common.Address{},
+		Amount: new(big.Int).Set(minCndEntrustPledgeBalance),
+		Address: txSender,
+		Hash: tx.Hash(),
+	}
+	postion := 3
+	if err := candidatePledge.Target.UnmarshalText1([]byte(txDataInfo[postion])); err != nil {
+		log.Warn("Candidate Entrust", "miner address", txDataInfo[postion])
+		return currentCandidatePledge
+	}
+
+	if _, ok := snap.PosPledge[candidatePledge.Target]; !ok {
+		log.Warn("Candidate Entrust", "candidate is not exist", candidatePledge.Target)
+		return currentCandidatePledge
+	}
+
+	if _, ok := snap.PosPledge[candidatePledge.Address]; ok {
+		log.Warn("Candidate Entrust", "txSender is miner address", candidatePledge.Address)
+		return currentCandidatePledge
+	}
+	postion++
+	var err error
+	if candidatePledge.Amount, err = hexutil.UnmarshalText1([]byte(txDataInfo[postion])); err != nil {
+		log.Warn("Candidate Entrust", "number", txDataInfo[postion])
+		return currentCandidatePledge
+	}
+	if candidatePledge.Amount.Cmp(minCndEntrustPledgeBalance)<0{
+		log.Warn("Candidate Entrust", "Amount less than 1 ", txDataInfo[postion])
+		return currentCandidatePledge
+	}
+	targetMiner:=snap.findPosTargetMiner(txSender)
+	nilAddr := common.Address{}
+	if targetMiner!=nilAddr&&targetMiner!=candidatePledge.Target{
+		log.Warn("Candidate Entrust", "one address can only pledge one miner ", targetMiner)
+		return currentCandidatePledge
+	}
+	if state.GetBalance(txSender).Cmp(candidatePledge.Amount) < 0 {
+		log.Warn("Candidate Entrust", "balance", state.GetBalance(txSender))
+		return currentCandidatePledge
+	}
+	state.SubBalance(txSender, candidatePledge.Amount)
+	topics := make([]common.Hash, 3)
+	topics[0].UnmarshalText([]byte("0xdcadcdae40a91d6ed79cf78187b18f2d3b9c49f7ff68799d06850a8d35b2fd7e")) //web3.sha3("PledgeEntrust(address,uint256)")
+	topics[1].SetBytes(candidatePledge.Target.Bytes())
+	topics[2].SetBytes(big.NewInt(sscEnumCndLock).Bytes())
+	data := common.Hash{}
+	data.SetBytes(candidatePledge.Amount.Bytes())
+	a.addCustomerTxLog (tx, receipts, topics, data.Bytes())
+	currentCandidatePledge = append(currentCandidatePledge, candidatePledge)
+	return currentCandidatePledge
+}
+func (a *Alien) processCandidatePEntrustExit(currentCandidatePEntrustExit []CandidatePEntrustExitRecord, txDataInfo []string, txSender common.Address, tx *types.Transaction, receipts []*types.Receipt, state *state.StateDB, snap *Snapshot, number uint64) []CandidatePEntrustExitRecord {
+
+	if len(txDataInfo) <= 4 {
+		log.Warn("Candidate PEntrustExit", "parameter number", len(txDataInfo))
+		return currentCandidatePEntrustExit
+	}
+	candidatePledge := CandidatePEntrustExitRecord{
+		Target: common.Address{},
+		Hash: common.Hash{},
+		Address:common.Address{},
+		Amount:common.Big0,
+	}
+	postion := 3
+	if err := candidatePledge.Target.UnmarshalText1([]byte(txDataInfo[postion])); err != nil {
+		log.Warn("Candidate PEntrustExit", "miner address", txDataInfo[postion])
+		return currentCandidatePEntrustExit
+	}
+	postion++
+	candidatePledge.Hash = common.HexToHash(txDataInfo[postion])
+
+	if _, ok := snap.PosPledge[candidatePledge.Target]; !ok {
+		log.Warn("Candidate PEntrustExit", "candidate is not exist", candidatePledge.Target)
+		return currentCandidatePEntrustExit
+	}
+
+	if _, ok := snap.PosPledge[candidatePledge.Target].Detail[candidatePledge.Hash]; !ok {
+		log.Warn("Candidate PEntrustExit", "Hash is not exist", candidatePledge.Hash)
+		return currentCandidatePEntrustExit
+	}else{
+		pledgeDetail:=snap.PosPledge[candidatePledge.Target].Detail[candidatePledge.Hash]
+		if pledgeDetail.Address!=txSender {
+			log.Warn("Candidate PEntrustExit", "txSender is not right", txSender)
+			return currentCandidatePEntrustExit
+		}
+	    candidatePledge.Address=pledgeDetail.Address
+	    candidatePledge.Amount=pledgeDetail.Amount
+	}
+
+	if isInCurrentCandidatePEntrustExit(currentCandidatePEntrustExit,candidatePledge.Hash){
+		log.Warn("Candidate PEntrustExit", "Hash is in currentCandidatePEntrustExit", candidatePledge.Hash)
+		return currentCandidatePEntrustExit
+	}
+
+	if snap.isInPosCommitPeriod(candidatePledge.Target,number){
+		if txSender==snap.PosPledge[candidatePledge.Target].Manager {
+			log.Warn("Candidate exit New", "minerAddress is in commit period", candidatePledge.Target)
+			return currentCandidatePEntrustExit
+		}else{
+			if snap.isInPosCommitPeriodPass(candidatePledge.Target,number,candidatePledge.Hash,snap.SystemConfig.Deposit[sscEnumPosWithinCommitPeriod].Uint64()){
+				log.Warn("Candidate exit New", "hash is not BeyondCommitPeriod", candidatePledge.Hash)
+				return currentCandidatePEntrustExit
+			}
+		}
+	}else {
+		if snap.isInPosCommitPeriodPass(candidatePledge.Target,number,candidatePledge.Hash,snap.SystemConfig.Deposit[sscEnumPosBeyondCommitPeriod].Uint64()){
+			log.Warn("Candidate exit New", "hash is not BeyondCommitPeriod", candidatePledge.Hash)
+			return currentCandidatePEntrustExit
+		}
+	}
+
+	topics := make([]common.Hash, 3)
+	topics[0].UnmarshalText([]byte("0xaf7cf8bf073a87df843f342229f11fc2ecc069751926bc402836a4f1f2a52403")) //web3.sha3("PledgeEntrustExit(address,bytes32)")
+	topics[1].SetBytes(candidatePledge.Target.Bytes())
+	topics[2].SetBytes(big.NewInt(sscEnumCndLock).Bytes())
+	data := common.Hash{}
+	data.SetBytes(candidatePledge.Hash.Bytes())
+	a.addCustomerTxLog (tx, receipts, topics, data.Bytes())
+	currentCandidatePEntrustExit = append(currentCandidatePEntrustExit, candidatePledge)
+
+	if txSender==snap.PosPledge[candidatePledge.Target].Manager && !snap.isInTally(candidatePledge.Target){
+		managerPledge:=make([]common.Hash,0)
+		for hash,item:=range snap.PosPledge[candidatePledge.Target].Detail{
+			if item.Address==txSender{
+				managerPledge=append(managerPledge,hash)
+			}
+		}
+		exitPledge:=make([]common.Hash,0)
+		for _,item:=range currentCandidatePEntrustExit{
+			address:=snap.PosPledge[candidatePledge.Target].Detail[item.Hash].Address
+			if address==txSender{
+				exitPledge=append(exitPledge,item.Hash)
+			}
+		}
+		if len(exitPledge)>0&&len(exitPledge)==len(managerPledge){
+			for hash,item:=range snap.PosPledge[candidatePledge.Target].Detail{
+				if !isInCurrentCandidatePEntrustExit(currentCandidatePEntrustExit,hash){
+					candidateExitPledge := CandidatePEntrustExitRecord{
+						Target: candidatePledge.Target,
+						Hash: hash,
+						Address:item.Address,
+						Amount:item.Amount,
+					}
+					currentCandidatePEntrustExit = append(currentCandidatePEntrustExit, candidateExitPledge)
+				}
+			}
+		}
+	}
+	return currentCandidatePEntrustExit
+}
+
+func (a *Alien) processCandidateExitNew(currentCandidatePEntrustExit []CandidatePEntrustExitRecord, currentCandidateExit []common.Address, txDataInfo []string, txSender common.Address, tx *types.Transaction, receipts []*types.Receipt, state *state.StateDB, snap *Snapshot, number uint64) ([]CandidatePEntrustExitRecord, []common.Address) {
+	if len(txDataInfo) <= nfcPosMinerAddress {
+		log.Warn("Candidate exit New", "parameter number", len(txDataInfo))
+		return currentCandidatePEntrustExit, currentCandidateExit
+	}
+	minerAddress := common.Address{}
+	if err := minerAddress.UnmarshalText1([]byte(txDataInfo[nfcPosMinerAddress])); err != nil {
+		log.Warn("Candidate exit New", "miner address", txDataInfo[nfcPosMinerAddress])
+		return currentCandidatePEntrustExit, currentCandidateExit
+	}
+	if oldBind, ok := snap.PosPledge[minerAddress]; ok {
+		if oldBind.Manager !=txSender &&!(snap.isSystemManagerAndInTally(txSender,minerAddress)){
+			log.Warn("Candidate exit New", "Manager address is not txSender", txSender)
+			return currentCandidatePEntrustExit, currentCandidateExit
+		}
+	}else{
+		log.Warn("Candidate exit New", "minerAddress is not exist", minerAddress)
+		return currentCandidatePEntrustExit, currentCandidateExit
+	}
+
+	if snap.isInPosCommitPeriod(minerAddress,number){
+		log.Warn("Candidate exit New", "minerAddress is in commit period", minerAddress)
+		return currentCandidatePEntrustExit, currentCandidateExit
+	}
+
+	if snap.isInTally(minerAddress)&&!snap.isSystemManager(txSender){
+		log.Warn("Candidate exit New", "minerAddress is in tally", minerAddress)
+		return currentCandidatePEntrustExit, currentCandidateExit
+	}
+	topics := make([]common.Hash, 3)
+	topics[0].UnmarshalText([]byte("0x9489b96ebcb056332b79de467a2645c56a999089b730c99fead37b20420d58e7")) //web3.sha3("PledgeExit(address)")
+	topics[1].SetBytes(minerAddress.Bytes())
+	topics[2].SetBytes(big.NewInt(sscEnumCndLock).Bytes())
+	a.addCustomerTxLog (tx, receipts, topics, nil)
+	for hash,item:=range snap.PosPledge[minerAddress].Detail{
+		candidateExitPledge := CandidatePEntrustExitRecord{
+			Target: minerAddress,
+			Hash: hash,
+			Address:item.Address,
+			Amount:item.Amount,
+		}
+		currentCandidatePEntrustExit = append(currentCandidatePEntrustExit, candidateExitPledge)
+	}
+	if snap.isSystemManagerAndInTally(txSender,minerAddress){
+		currentCandidateExit=append(currentCandidateExit,minerAddress)
+	}
+	return currentCandidatePEntrustExit, currentCandidateExit
+}
+
+func (a *Alien) isPosManager(snap *Snapshot,deviceBind DeviceBindRecord,txSender common.Address,txDataInfo []string) bool {
+	if _, ok := snap.PosPledge[deviceBind.Device]; ok {
+		if snap.PosPledge[deviceBind.Device].Manager != txSender {
+			log.Warn("isPosManager", "txSender is not manager", txSender)
+			return false
+		}else{
+			return true
+		}
+	} else {
+		log.Warn("isPosManager", "PosPledge is not exist", txDataInfo[nfcPosMinerAddress])
+		return false
+	}
+}
+
+func (a *Alien) processCandidateChangeRate(currentCandidateRate []CandidateChangeRateRecord, txDataInfo []string, txSender common.Address, tx *types.Transaction, receipts []*types.Receipt, state *state.StateDB, snap *Snapshot, number uint64) []CandidateChangeRateRecord {
+	if len(txDataInfo) <= 4 {
+		log.Warn("Candidate ChangeRate", "parameter number", len(txDataInfo))
+		return currentCandidateRate
+	}
+	postion := 3
+	minerAddress := common.Address{}
+	if err := minerAddress.UnmarshalText1([]byte(txDataInfo[postion])); err != nil {
+		log.Warn("Candidate ChangeRate", "miner address", txDataInfo[nfcPosMinerAddress])
+		return currentCandidateRate
+	}
+	if oldBind, ok := snap.PosPledge[minerAddress]; ok {
+		if oldBind.Manager !=txSender {
+			log.Warn("Candidate ChangeRate", "Manager address is not txSender", txSender)
+			return currentCandidateRate
+		}
+	}else{
+		log.Warn("Candidate ChangeRate", "minerAddress is not exist", minerAddress)
+		return currentCandidateRate
+	}
+	candidateChangeRate := CandidateChangeRateRecord{
+		Target: minerAddress,
+		Rate:common.Big0,
+	}
+	postion++
+	var err error
+	if candidateChangeRate.Rate, err = hexutil.UnmarshalText1([]byte(txDataInfo[postion])); err != nil {
+		log.Warn("Candidate ChangeRate", "number", txDataInfo[postion])
+		return currentCandidateRate
+	}
+	if candidateChangeRate.Rate.Cmp(posDistributionDefaultRate)>0 {
+		log.Warn("Candidate ChangeRate", "Rate greater than posDistributionDefaultRate ", txDataInfo[postion])
+		return currentCandidateRate
+	}
+	if candidateChangeRate.Rate.Cmp(common.Big0)<=0 {
+		log.Warn("Candidate ChangeRate", "Rate Less than or equal to 0 ", txDataInfo[postion])
+		return currentCandidateRate
+	}
+	topics := make([]common.Hash, 3)
+	topics[0].UnmarshalText([]byte("0x4c3b40c94758c0e27ceddbf9149c59c96f3694815f7b7dcb267fd8db56762bcf")) //web3.sha3("PledgeChaRate(address,uint256)")
+	topics[1].SetBytes(minerAddress.Bytes())
+	topics[2].SetBytes(candidateChangeRate.Rate.Bytes())
+	a.addCustomerTxLog (tx, receipts, topics, nil)
+	currentCandidateRate=append(currentCandidateRate,candidateChangeRate)
+	return currentCandidateRate
+}
+
+func isInCurrentCandidatePEntrustExit(currentCandidatePEntrustExit []CandidatePEntrustExitRecord, hash common.Hash) bool {
+	has:=false
+	for _,currentItem:=range currentCandidatePEntrustExit{
+		if currentItem.Hash==hash {
+			has=true
+			break
+		}
+	}
+	return has
 }

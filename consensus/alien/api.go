@@ -19,9 +19,13 @@
 package alien
 
 import (
+	"bytes"
+	"container/list"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"github.com/UltronGlow/UltronGlow-Origin/common"
 	"github.com/UltronGlow/UltronGlow-Origin/consensus"
-	"github.com/UltronGlow/UltronGlow-Origin/consensus/alien/extrastate"
 	"github.com/UltronGlow/UltronGlow-Origin/core/types"
 	"github.com/UltronGlow/UltronGlow-Origin/ethdb"
 	"github.com/UltronGlow/UltronGlow-Origin/log"
@@ -29,6 +33,12 @@ import (
 	"github.com/UltronGlow/UltronGlow-Origin/rpc"
 	"github.com/shopspring/decimal"
 	"math/big"
+	"sync"
+)
+
+
+var (
+	errNumberTooSmall = errors.New("block number too small")
 )
 
 // API is a user facing RPC API to allow controlling the signer and voting
@@ -36,6 +46,13 @@ import (
 type API struct {
 	chain consensus.ChainHeaderReader
 	alien *Alien
+	sCache *list.List
+	lock sync.RWMutex
+}
+
+type SnapCache struct {
+	number uint64
+	s *Snapshot
 }
 
 // GetSnapshot retrieves the state snapshot at a given block.
@@ -44,171 +61,58 @@ func (api *API) GetSnapshot(number *rpc.BlockNumber) (*Snapshot, error) {
 	var header *types.Header
 	if number == nil || *number == rpc.LatestBlockNumber {
 		header = api.chain.CurrentHeader()
+		log.Info("api GetSnapshot", "number",number)
 	} else {
 		header = api.chain.GetHeaderByNumber(uint64(number.Int64()))
+		log.Info("api GetSnapshot", "number",number.Int64())
+		if err:=api.isNumberTooSmall(header);err!=nil{
+			return nil,err
+		}
 	}
 	// Ensure we have an actually valid block and return its snapshot
 	if header == nil {
 		return nil, errUnknownBlock
 	}
-	return api.alien.snapshot(api.chain, header.Number.Uint64(), header.Hash(), nil, nil, defaultLoopCntRecalculateSigners)
 
+	return api.getSnapshotCache(header)
 }
 
 // GetSnapshotAtHash retrieves the state snapshot at a given block.
 func (api *API) GetSnapshotAtHash(hash common.Hash) (*Snapshot, error) {
+	log.Info("api GetSnapshotAtHash", "hash", hash)
 	header := api.chain.GetHeaderByHash(hash)
 	if header == nil {
 		return nil, errUnknownBlock
 	}
-	return api.alien.snapshot(api.chain, header.Number.Uint64(), header.Hash(), nil, nil, defaultLoopCntRecalculateSigners)
+	if err:=api.isNumberTooSmall(header);err!=nil{
+		return nil,err
+	}
+	return api.getSnapshotCache(header)
 }
 
 // GetSnapshotAtNumber retrieves the state snapshot at a given block.
 func (api *API) GetSnapshotAtNumber(number uint64) (*Snapshot, error) {
+	log.Info("api GetSnapshotAtNumber", "number", number)
 	header := api.chain.GetHeaderByNumber(number)
 	if header == nil {
 		return nil, errUnknownBlock
 	}
-	return api.alien.snapshot(api.chain, header.Number.Uint64(), header.Hash(), nil, nil, defaultLoopCntRecalculateSigners)
+	if err:=api.isNumberTooSmall(header);err!=nil{
+		return nil,err
+	}
+	return api.getSnapshotCache(header)
 }
 
-// GetSnapshotByHeaderTime retrieves the state snapshot by timestamp of header.
-// snapshot.header.time <= targetTime < snapshot.header.time + period
-// todo: add confirm headertime in return snapshot, to minimize the request from side chain
-func (api *API) GetSnapshotByHeaderTime(targetTime uint64, scHash common.Hash) (*Snapshot, error) {
-	header := api.chain.CurrentHeader()
-	if header == nil {
-		return nil, errUnknownBlock
-	}
-	period := new(big.Int).SetUint64(api.chain.Config().Alien.Period)
-	target := new(big.Int).SetUint64(targetTime)
-	ceil := new(big.Int).Add(new(big.Int).SetUint64(header.Time), period)
-	if target.Cmp(ceil) > 0 {
-		target = new(big.Int).SetUint64(header.Time)
-	}
-
-	minN := new(big.Int).SetUint64(api.chain.Config().Alien.MaxSignerCount)
-	maxN := new(big.Int).Set(header.Number)
-	nextN := new(big.Int).SetInt64(0)
-	isNext := false
-	for {
-		ceil = new(big.Int).Add(new(big.Int).SetUint64(header.Time), period)
-		if target.Cmp(new(big.Int).SetUint64(header.Time)) >= 0 && target.Cmp(ceil) < 0 {
-			snap, err := api.alien.snapshot(api.chain, header.Number.Uint64(), header.Hash(), nil, nil, defaultLoopCntRecalculateSigners)
-
-			// replace coinbase by signer settings
-			var scSigners    []*common.Address
-			//for _, signer := range snap.Signers {
-			//	replaced := false
-			//	if _, ok := snap.SCCoinbase[*signer]; ok {
-			//		if addr, ok := snap.SCCoinbase[*signer][scHash]; ok {
-			//			replaced = true
-			//			scSigners = append(scSigners, &addr)
-			//		}
-			//	}
-			//	if !replaced {
-			//		scSigners = append(scSigners, signer)
-			//	}
-			//}
-			for signer, _ := range snap.SCCoinbase[scHash] {
-				scSigners = append(scSigners, &signer)
-			}
-			mcs := Snapshot{
-				LoopStartTime: snap.LoopStartTime,
-				Period: snap.Period,
-				Signers: scSigners,
-				Number: snap.Number,
-				SCFULBalance: make(map[common.Address]*big.Int),
-				SCMinerRevenue: make(map[common.Address]common.Address),
-				SCFlowPledge: make(map[common.Address]bool),
-			}
-			for address, item := range snap.FULBalance {
-				balance := new(big.Int).Set(item.Balance)
-				for sc, cost := range item.CostTotal {
-					if sc.String() == scHash.String() {
-						continue
-					}
-					balance = new(big.Int).Sub(balance,cost)
-					if 0 >= balance.Cmp(big.NewInt(0)) {
-						break
-					}
-				}
-				mcs.SCFULBalance[address] = balance
-			}
-			for address, revenue := range snap.RevenueFlow {
-				mcs.SCMinerRevenue[address] = revenue.RevenueAddress
-			}
-			for address, pledge := range snap.FlowPledge {
-				if 0 == pledge.StartHigh {
-					mcs.SCFlowPledge[address] = true
-				}
-			}
-			if _, ok := snap.SCNoticeMap[scHash]; ok {
-				mcs.SCNoticeMap = make(map[common.Hash]*CCNotice)
-				mcs.SCNoticeMap[scHash] = snap.SCNoticeMap[scHash]
-			}
-			return &mcs, err
-		} else {
-			if minNext := new(big.Int).Add(minN, big.NewInt(1)); maxN.Cmp(minN) == 0 || maxN.Cmp(minNext) == 0 {
-				if !isNext && maxN.Cmp(minNext) == 0 {
-					var maxHeaderTime, minHeaderTime *big.Int
-					maxH := api.chain.GetHeaderByNumber(maxN.Uint64())
-					if maxH != nil {
-						maxHeaderTime = new(big.Int).SetUint64(maxH.Time)
-					} else {
-						break
-					}
-					minH := api.chain.GetHeaderByNumber(minN.Uint64())
-					if minH != nil {
-						minHeaderTime = new(big.Int).SetUint64(minH.Time)
-					} else {
-						break
-					}
-					period = period.Sub(maxHeaderTime, minHeaderTime)
-					isNext = true
-				} else {
-					break
-				}
-			}
-			// calculate next number
-			nextN.Sub(target, new(big.Int).SetUint64(header.Time))
-			nextN.Div(nextN, period)
-			nextN.Add(nextN, header.Number)
-
-			// if nextN beyond the [minN,maxN] then set nextN = (min+max)/2
-			if nextN.Cmp(maxN) >= 0 || nextN.Cmp(minN) <= 0 {
-				nextN.Add(maxN, minN)
-				nextN.Div(nextN, big.NewInt(2))
-			}
-			// get new header
-			header = api.chain.GetHeaderByNumber(nextN.Uint64())
-			if header == nil {
-				break
-			}
-			// update maxN & minN
-			if new(big.Int).SetUint64(header.Time).Cmp(target) >= 0 {
-				if header.Number.Cmp(maxN) < 0 {
-					maxN.Set(header.Number)
-				}
-			} else if new(big.Int).SetUint64(header.Time).Cmp(target) <= 0 {
-				if header.Number.Cmp(minN) > 0 {
-					minN.Set(header.Number)
-				}
-			}
-
-		}
-	}
-	return nil, errUnknownBlock
-}
-
-//y add method
 func (api *API) GetSnapshotSignerAtNumber(number uint64) (*SnapshotSign, error) {
+	log.Info("api GetSnapshotSignerAtNumber", "number", number)
 	header := api.chain.GetHeaderByNumber(number)
 	if header == nil {
 		return nil, errUnknownBlock
 	}
-	snapshot,err:= api.alien.snapshot(api.chain, header.Number.Uint64(), header.Hash(), nil, nil, defaultLoopCntRecalculateSigners)
+	if err:=api.isNumberTooSmall(header);err!=nil{
+		return nil,err
+	}
+	snapshot,err:= api.getSnapshotCache(header)
 	if err != nil {
 		log.Warn("Fail to GetSnapshotSignAtNumber", "err", err)
 		return nil, errUnknownBlock
@@ -217,6 +121,16 @@ func (api *API) GetSnapshotSignerAtNumber(number uint64) (*SnapshotSign, error) 
 		LoopStartTime:snapshot.LoopStartTime,
 		Signers: snapshot.Signers,
 		Punished: snapshot.Punished,
+		SignPledge:make(map[common.Address]*SignPledgeItem),
+	}
+	if isGEPOSNewEffect(number){
+		for miner,item:=range snapshot.PosPledge{
+			snapshotSign.SignPledge[miner]=&SignPledgeItem{
+				TotalAmount: new(big.Int).Set(item.TotalAmount),
+				LastPunish:item.LastPunish,
+				DisRate:new(big.Int).Set(item.DisRate),
+			}
+		}
 	}
 	return snapshotSign, err
 }
@@ -226,15 +140,24 @@ type SnapshotSign struct {
 	LoopStartTime   uint64                                              `json:"loopStartTime"`
 	Signers         []*common.Address                                   `json:"signers"`
 	Punished        map[common.Address]uint64                           `json:"punished"`
+	SignPledge      map[common.Address]*SignPledgeItem                  `json:"signpledge"`
+}
+type SignPledgeItem struct {
+	TotalAmount *big.Int                      `json:"totalamount"`
+	LastPunish  uint64                        `json:"lastpunish"`
+	DisRate     *big.Int                      `json:"distributerate"`
 }
 
-
 func (api *API) GetSnapshotReleaseAtNumber(number uint64,part string) (*SnapshotRelease, error) {
+	log.Info("api GetSnapshotReleaseAtNumber", "number", number)
 	header := api.chain.GetHeaderByNumber(number)
 	if header == nil {
 		return nil, errUnknownBlock
 	}
-	snapshot,err:= api.alien.snapshot(api.chain, header.Number.Uint64(), header.Hash(), nil, nil, defaultLoopCntRecalculateSigners)
+	if err:=api.isNumberTooSmall(header);err!=nil{
+		return nil,err
+	}
+	snapshot,err:= api.getSnapshotCache(header)
 	if err != nil {
 		log.Warn("Fail to GetSnapshotSignAtNumber", "err", err)
 		return nil, errUnknownBlock
@@ -261,7 +184,10 @@ func (api *API) GetSnapshotReleaseAtNumber(number uint64,part string) (*Snapshot
 			if snapshot.FlowRevenue.PosPgExitLock!=nil {
 				snapshotRelease.appendFRlockData(snapshot.FlowRevenue.PosPgExitLock,api.alien.db)
 			}
-
+		}else if part =="posexit"{
+			if snapshot.FlowRevenue.PosExitLock!=nil {
+				snapshotRelease.appendFRlockData(snapshot.FlowRevenue.PosExitLock,api.alien.db)
+			}
 		}
 	}else{
 		snapshotRelease.CandidatePledge=snapshot.CandidatePledge
@@ -274,7 +200,9 @@ func (api *API) GetSnapshotReleaseAtNumber(number uint64,part string) (*Snapshot
 		if number >= PledgeRevertLockEffectNumber{
 			snapshotRelease.appendFRlockData(snapshot.FlowRevenue.PosPgExitLock,api.alien.db)
 		}
-
+		if isGEPOSNewEffect(number){
+			snapshotRelease.appendFRlockData(snapshot.FlowRevenue.PosExitLock,api.alien.db)
+		}
 	}
 	return snapshotRelease, err
 }
@@ -347,6 +275,7 @@ type SnapshotRelease struct {
 }
 
 func (api *API) GetSnapshotFlowAtNumber(number uint64) (*SnapshotFlow, error) {
+	log.Info("api GetSnapshotFlowAtNumber", "number", number)
 	header := api.chain.GetHeaderByNumber(number)
 	if header == nil {
 		return nil, errUnknownBlock
@@ -388,11 +317,15 @@ type FlowRecord struct {
 }
 
 func (api *API) GetSnapshotFlowMinerAtNumber(number uint64) (*SnapshotFlowMiner, error) {
+	log.Info("api GetSnapshotFlowMinerAtNumber", "number", number)
 	header := api.chain.GetHeaderByNumber(number)
 	if header == nil {
 		return nil, errUnknownBlock
 	}
-	snapshot,err:= api.alien.snapshot(api.chain, header.Number.Uint64(), header.Hash(), nil, nil, defaultLoopCntRecalculateSigners)
+	if err:=api.isNumberTooSmall(header);err!=nil{
+		return nil,err
+	}
+	snapshot,err:= api.getSnapshotCache(header)
 	if err != nil {
 		log.Warn("Fail to GetSnapshotFlowMinerAtNumber", "err", err)
 		return nil, errUnknownBlock
@@ -440,6 +373,7 @@ func (sf *SnapshotFlowMiner) loadFlowMinerCache(fMiner *FlowMinerSnap,flowMinerC
 
 
 func (api *API) GetSnapshotFlowReportAtNumber(number uint64) (*SnapshotFlowReport, error) {
+	log.Info("api GetSnapshotFlowReportAtNumber", "number", number)
 	header := api.chain.GetHeaderByNumber(number)
 	if header == nil {
 		return nil, errUnknownBlock
@@ -466,6 +400,7 @@ type SnapshotFlowReport struct {
 
 
 func (api *API) GetLockRewardAtNumber(number uint64) ([]LockRewardRecord, error) {
+	log.Info("api GetLockRewardAtNumber", "number", number)
 	header := api.chain.GetHeaderByNumber(number)
 	if header == nil {
 		return nil, errUnknownBlock
@@ -484,11 +419,15 @@ func (api *API) GetLockRewardAtNumber(number uint64) ([]LockRewardRecord, error)
 }
 
 func (api *API) GetSRTBalAtNumber(number uint64) (*SnapshotSRT, error) {
+	log.Info("api GetSRTBalAtNumber", "number", number)
 	header := api.chain.GetHeaderByNumber(number)
 	if header == nil {
 		return nil, errUnknownBlock
 	}
-	snapshot,err:= api.alien.snapshot(api.chain, header.Number.Uint64(), header.Hash(), nil, nil, defaultLoopCntRecalculateSigners)
+	if err:=api.isNumberTooSmall(header);err!=nil{
+		return nil,err
+	}
+	snapshot,err:= api.getSnapshotCache(header)
 	if err != nil {
 		log.Warn("Fail to GetSRTBalAtNumber", "err", err)
 		return nil, errUnknownBlock
@@ -510,11 +449,15 @@ type SnapshotSRT struct {
 }
 
 func (api *API) GetSPledgeAtNumber(number uint64) (*SnapshotSPledge, error) {
+	log.Info("api GetSPledgeAtNumber", "number", number)
 	header := api.chain.GetHeaderByNumber(number)
 	if header == nil {
 		return nil, errUnknownBlock
 	}
-	snapshot,err:= api.alien.snapshot(api.chain, header.Number.Uint64(), header.Hash(), nil, nil, defaultLoopCntRecalculateSigners)
+	if err:=api.isNumberTooSmall(header);err!=nil{
+		return nil,err
+	}
+	snapshot,err:= api.getSnapshotCache(header)
 	if err != nil {
 		log.Warn("Fail to GetSPledgeAtNumber", "err", err)
 		return nil, errUnknownBlock
@@ -579,11 +522,15 @@ type LeaseDetail2 struct {
 }
 
 func (api *API) GetStorageRewardAtNumber(number uint64,part string) (*SnapshotStorageReward, error) {
+	log.Info("api GetStorageRewardAtNumber", "number", number)
 	header := api.chain.GetHeaderByNumber(number)
 	if header == nil {
 		return nil, errUnknownBlock
 	}
-	snapshot,err:= api.alien.snapshot(api.chain, header.Number.Uint64(), header.Hash(), nil, nil, defaultLoopCntRecalculateSigners)
+	if err:=api.isNumberTooSmall(header);err!=nil{
+		return nil,err
+	}
+	snapshot,err:= api.getSnapshotCache(header)
 	if err != nil {
 		log.Warn("Fail to GetStoragePledgeRewardAtNumber", "err", err)
 		return nil, errUnknownBlock
@@ -640,11 +587,11 @@ func (api *API) GetStorageRewardAtNumber(number uint64,part string) (*SnapshotSt
 			}
 
 
-		reward, err2 := NewStorageSnap().loadLockReward(api.alien.db, number, signerRewardKey)
-		if err2 == nil && reward != nil && len(reward) > 0 {
-			snapshotStorageReward.StorageReward.Reward = append(snapshotStorageReward.StorageReward.Reward, reward...)
+			reward, err2 := NewStorageSnap().loadLockReward(api.alien.db, number, signerRewardKey)
+			if err2 == nil && reward != nil && len(reward) > 0 {
+				snapshotStorageReward.StorageReward.Reward = append(snapshotStorageReward.StorageReward.Reward, reward...)
+			}
 		}
-	}
 	}
 	return snapshotStorageReward, err
 }
@@ -661,6 +608,7 @@ type StorageReward struct {
 }
 
 func (api *API) GetStorageRatiosAtNumber(number uint64) (*SnapshotStorageRatios, error) {
+	log.Info("api GetStorageRatiosAtNumber", "number", number)
 	snapshotStorageRatios := &SnapshotStorageRatios{
 		Ratios:make(map[common.Address]*StorageRatio),
 	}
@@ -680,6 +628,7 @@ type SnapshotRevertSRT struct {
 }
 
 func (api *API) GetRevertSRTAtNumber(number uint64) (*SnapshotRevertSRT, error) {
+	log.Info("api GetRevertSRTAtNumber", "number", number)
 	revertSRT,err:=NewStorageSnap().lockRevertSRT(api.alien.db,number)
 	if err != nil {
 		log.Info("Fail to decode header Extra", "err", err)
@@ -691,41 +640,20 @@ func (api *API) GetRevertSRTAtNumber(number uint64) (*SnapshotRevertSRT, error) 
 	return snapshotRevertSRT,nil
 }
 
-func (api *API) GetPaysAtNumber(number uint64) (*SnapshotPay) {
-	snapshotPay := &SnapshotPay{
-		Pays:make([]PayRecard2,0),
-	}
-	payRecards:=extrastate.LoadPayRecords(number)
-	if payRecards!=nil&&len(payRecards)>0{
-		for _,pay:=range payRecards{
-			snapshotPay.Pays=append(snapshotPay.Pays,PayRecard2{
-				Address:pay.Address,
-				Amount:pay.Amount,
-			})
-		}
-	}
-	return snapshotPay
-}
-
-type SnapshotPay struct {
-	Pays []PayRecard2 `json:"pays"`
-}
-
-type PayRecard2 struct {
-	Address common.Address `json:"address"`
-	Amount  *big.Int `json:"amount"`
-}
-
 type SnapshotAddrSRT struct {
 	AddrSrtBal *big.Int `json:"addrsrtbal"`
 }
 
 func (api *API) GetSRTBalanceAtNumber(address common.Address,number uint64) (*SnapshotAddrSRT,error) {
+	log.Info("api GetSRTBalanceAtNumber", "address",address,"number", number)
 	header := api.chain.GetHeaderByNumber(number)
 	if header == nil {
 		return nil, errUnknownBlock
 	}
-	snapshot,err:= api.alien.snapshot(api.chain, header.Number.Uint64(), header.Hash(), nil, nil, defaultLoopCntRecalculateSigners)
+	if err:=api.isNumberTooSmall(header);err!=nil{
+		return nil,err
+	}
+	snapshot,err:= api.getSnapshotCache(header)
 	if err != nil {
 		log.Warn("Fail to GetSRTBalanceAtNumber", "err", err)
 		return nil, errUnknownBlock
@@ -742,6 +670,7 @@ func (api *API) GetSRTBalanceAtNumber(address common.Address,number uint64) (*Sn
 }
 
 func (api *API) GetSRTBalance(address common.Address) (*SnapshotAddrSRT,error) {
+	log.Info("api GetSRTBalance", "address",address)
 	header := api.chain.CurrentHeader()
 	if header == nil {
 		return nil, errUnknownBlock
@@ -750,11 +679,15 @@ func (api *API) GetSRTBalance(address common.Address) (*SnapshotAddrSRT,error) {
 }
 
 func (api *API) GetSPledgeInfoByAddr(address common.Address) (*SnapshotSPledgeInfo,error) {
+	log.Info("api GetSPledgeInfoByAddr", "address",address)
 	header := api.chain.CurrentHeader()
 	if header == nil {
 		return nil, errUnknownBlock
 	}
-	snapshot,err:= api.alien.snapshot(api.chain, header.Number.Uint64(), header.Hash(), nil, nil, defaultLoopCntRecalculateSigners)
+	if err:=api.isNumberTooSmall(header);err!=nil{
+		return nil,err
+	}
+	snapshot,err:= api.getSnapshotCache(header)
 	if err != nil {
 		log.Warn("Fail to GetSPledgeInfoByAddr", "err", err)
 		return nil, errUnknownBlock
@@ -800,11 +733,15 @@ type Lease3 struct {
 }
 
 func (api *API) GetSPledgeCapVerAtNumber(number uint64) (*SnapshotSPledgeCapVer, error) {
+	log.Info("api GetSPledgeCapVerAtNumber", "number",number)
 	header := api.chain.GetHeaderByNumber(number)
 	if header == nil {
 		return nil, errUnknownBlock
 	}
-	snapshot,err:= api.alien.snapshot(api.chain, header.Number.Uint64(), header.Hash(), nil, nil, defaultLoopCntRecalculateSigners)
+	if err:=api.isNumberTooSmall(header);err!=nil{
+		return nil,err
+	}
+	snapshot,err:= api.getSnapshotCache(header)
 	if err != nil {
 		log.Warn("Fail to GetSPledgeCapVerAtNumber", "err", err)
 		return nil, errUnknownBlock
@@ -812,7 +749,7 @@ func (api *API) GetSPledgeCapVerAtNumber(number uint64) (*SnapshotSPledgeCapVer,
 	snapshotSPledgeCapVer := &SnapshotSPledgeCapVer{
 		SpledgeCapVer: api.calStorageVerifyPercentage(number,snapshot.getBlockPreDay(),snapshot.StorageData.copy()),
 	}
-    return snapshotSPledgeCapVer, err
+	return snapshotSPledgeCapVer, err
 }
 
 type SnapshotSPledgeCapVer struct {
@@ -824,7 +761,7 @@ func (api *API) calStorageVerifyPercentage(number uint64, blockPerday uint64,s *
 	bigNumber := new(big.Int).SetUint64(number)
 	bigblockPerDay := new(big.Int).SetUint64(blockPerday)
 	zeroTime := new(big.Int).Mul(new(big.Int).Div(bigNumber, bigblockPerDay), bigblockPerDay) //0:00 every day
-	beforeZeroTime := new(big.Int).Sub(zeroTime, bigblockPerDay)
+	beforeZeroTime := new(big.Int).Set(zeroTime)
 	for pledgeAddr, sPledge := range s.StoragePledge {
 		capSucc := big.NewInt(0)
 		storagespaces := s.StoragePledge[pledgeAddr].StorageSpaces
@@ -866,6 +803,7 @@ type SnapshotSPledgeValue struct {
 }
 
 func (api *API) GetStorageValueAtNumber(number uint64,part string) (*SnapshotSPledgeValue, error) {
+	log.Info("api GetStorageValueAtNumber", "number",number,"part",part)
 	snapshotStorage := &SnapshotSPledgeValue{
 		SpledgeValue:common.Big0,
 	}
@@ -894,6 +832,7 @@ type SnapshotSPledgeDecimalValue struct {
 
 
 func (api *API) GetStorageDecimalValueAtNumber(number uint64,part string) (*SnapshotSPledgeDecimalValue, error) {
+	log.Info("api GetStorageDecimalValueAtNumber", "number",number,"part",part)
 	snapshotStorage := &SnapshotSPledgeDecimalValue{
 		SpledgeDecimalValue:decimal.Zero,
 	}
@@ -913,6 +852,7 @@ type SnapshotSPledgeRatioValue struct {
 }
 
 func (api *API) GetStorageRatioValueAtNumber(number uint64,value *big.Int,part string) (*SnapshotSPledgeRatioValue, error) {
+	log.Info("api GetStorageRatioValueAtNumber", "number",number,"value",value,"part",part)
 	snapshotStorage := &SnapshotSPledgeRatioValue{
 		SpledgeRatioValue:decimal.Zero,
 	}
@@ -921,7 +861,7 @@ func (api *API) GetStorageRatioValueAtNumber(number uint64,value *big.Int,part s
 		v=getBandwaith(value,number)
 	}
 	if part =="StorageRatio"{
-		v=NewStorageSnap().calStorageRatio(value)
+		v=NewStorageSnap().calStorageRatio(value,number)
 	}
 	snapshotStorage.SpledgeRatioValue=v
 	return snapshotStorage, nil
@@ -932,6 +872,7 @@ type SnapshotSucSPledge struct {
 }
 
 func (api *API) GetSucSPledgeAtNumber(number uint64) (*SnapshotSucSPledge, error) {
+	log.Info("api GetSucSPledgeAtNumber", "number",number)
 	snapshotSucSPledge := &SnapshotSucSPledge{
 		SucSPledge:make([]common.Address,0),
 	}
@@ -947,6 +888,7 @@ type SnapshotRentSuc struct {
 }
 
 func (api *API) GetRentSucAtNumber(number uint64) (*SnapshotRentSuc, error) {
+	log.Info("api GetRentSucAtNumber", "number",number)
 	snapshotRentSuc := &SnapshotRentSuc{
 		RentSuc:make([]common.Hash,0),
 	}
@@ -963,6 +905,7 @@ type SnapshotCapSuccAddrs struct {
 }
 
 func (api *API) GetCapSuccAddrsAtNumber(number uint64) (*SnapshotCapSuccAddrs, error) {
+	log.Info("api GetCapSuccAddrsAtNumber", "number",number)
 	snapshotCapSuccAddrs := &SnapshotCapSuccAddrs{
 		CapSuccAddrs:make(map[common.Address]*big.Int),
 	}
@@ -974,6 +917,7 @@ func (api *API) GetCapSuccAddrsAtNumber(number uint64) (*SnapshotCapSuccAddrs, e
 }
 
 func (api *API) GetGrantProfitAtNumber(number uint64) ([]consensus.GrantProfitRecord, error) {
+	log.Info("api GetGrantProfitAtNumber", "number",number)
 	header := api.chain.GetHeaderByNumber(number)
 	if header == nil {
 		return nil, errUnknownBlock
@@ -989,4 +933,484 @@ func (api *API) GetGrantProfitAtNumber(number uint64) ([]consensus.GrantProfitRe
 		grantProfit=append(grantProfit,headerExtra.GrantProfit...)
 	}
 	return grantProfit, err
+}
+
+type SnapshotSTGbwMakeup struct {
+	STGBandwidthMakeup map[common.Address]*BandwidthMakeup `json:"stgbandwidthmakeup"`
+}
+
+func (api *API) GetSTGBandwidthMakeup() (*SnapshotSTGbwMakeup, error) {
+	log.Info("api GetSTGBandwidthMakeup", "number",PosrIncentiveEffectNumber)
+	header := api.chain.GetHeaderByNumber(PosrIncentiveEffectNumber)
+	if header == nil {
+		return nil, errUnknownBlock
+	}
+	if err:=api.isNumberTooSmall(header);err!=nil{
+		return nil,err
+	}
+	snapshot,err:= api.getSnapshotCache(header)
+	if err != nil {
+		log.Warn("Fail to GetSPledgeCapVerAtNumber", "err", err)
+		return nil, errUnknownBlock
+	}
+	snapshotSTGbwMakeup := &SnapshotSTGbwMakeup{
+		STGBandwidthMakeup: snapshot.STGBandwidthMakeup,
+	}
+	return snapshotSTGbwMakeup, err
+}
+
+func (api *API) getSnapshotCache(header *types.Header) (*Snapshot, error) {
+	number:=header.Number.Uint64()
+	s:=api.findInSnapCache(number)
+	if nil!=s{
+		return s,nil
+	}
+	return api.getSnapshotByHeader(header)
+}
+
+func (api *API)findInSnapCache(number uint64) *Snapshot {
+	for i := api.sCache.Front(); i != nil; i = i.Next() {
+		v:=i.Value.(SnapCache)
+		if v.number==number{
+			return v.s
+		}
+	}
+	return nil
+}
+
+func (api *API) getSnapshotByHeader(header *types.Header) (*Snapshot,error) {
+	api.lock.Lock()
+	defer api.lock.Unlock()
+	number:=header.Number.Uint64()
+	s:=api.findInSnapCache(number)
+	if nil!=s{
+		return s,nil
+	}
+	cacheSize:=32
+	snapshot,err:= api.alien.snapshot(api.chain, number, header.Hash(), nil, nil, defaultLoopCntRecalculateSigners)
+	if err != nil {
+		log.Warn("Fail to getSnapshotByHeader", "err", err)
+		return nil, errUnknownBlock
+	}
+	api.sCache.PushBack(SnapCache{
+		number: number,
+		s:snapshot,
+	})
+	if api.sCache.Len()>cacheSize{
+		api.sCache.Remove(api.sCache.Front())
+	}
+	return snapshot,nil
+}
+
+func (api *API) GetSnapshotReleaseAtNumber2(number uint64,part string,startLNum uint64,endLNum uint64) (*SnapshotRelease, error) {
+	log.Info("api GetSnapshotReleaseAtNumber2", "number",number,"part",part,"startLNum",startLNum,"endLNum",endLNum)
+	header := api.chain.GetHeaderByNumber(number)
+	if header == nil {
+		return nil, errUnknownBlock
+	}
+	if err:=api.isNumberTooSmall(header);err!=nil{
+		return nil,err
+	}
+	snapshot,err:= api.getSnapshotCache(header)
+	if err != nil {
+		log.Warn("Fail to GetSnapshotSignAtNumber", "err", err)
+		return nil, errUnknownBlock
+	}
+	snapshotRelease := &SnapshotRelease{
+		CandidatePledge:make(map[common.Address]*PledgeItem),
+		FlowPledge: make(map[common.Address]*PledgeItem),
+		FlowRevenue: make(map[common.Address]*LockBalanceData),
+	}
+	if part!=""{
+		if part =="candidatepledge"{
+			snapshotRelease.CandidatePledge=snapshot.CandidatePledge
+		}else if part =="flowminerpledge"{
+			if number < PledgeRevertLockEffectNumber{
+				snapshotRelease.FlowPledge=snapshot.FlowPledge
+			}
+		}else if part =="rewardlock"{
+			snapshotRelease.appendFRlockData2(snapshot.FlowRevenue.RewardLock,api.alien.db,startLNum,endLNum)
+		}else if part =="flowlock"{
+			snapshotRelease.appendFRlockData2(snapshot.FlowRevenue.FlowLock,api.alien.db,startLNum,endLNum)
+		}else if part =="bandwidthlock"{
+			snapshotRelease.appendFRlockData2(snapshot.FlowRevenue.BandwidthLock,api.alien.db,startLNum,endLNum)
+		}else if part =="posplexit"{
+			if snapshot.FlowRevenue.PosPgExitLock!=nil {
+				snapshotRelease.appendFRlockData2(snapshot.FlowRevenue.PosPgExitLock,api.alien.db,startLNum,endLNum)
+			}
+		}else if part =="posexit"{
+			if snapshot.FlowRevenue.PosExitLock!=nil {
+				snapshotRelease.appendFRlockData2(snapshot.FlowRevenue.PosExitLock,api.alien.db,startLNum,endLNum)
+			}
+		}
+	}else{
+		snapshotRelease.CandidatePledge=snapshot.CandidatePledge
+		if number < PledgeRevertLockEffectNumber{
+			snapshotRelease.FlowPledge=snapshot.FlowPledge
+		}
+		snapshotRelease.appendFRlockData2(snapshot.FlowRevenue.RewardLock,api.alien.db,startLNum,endLNum)
+		snapshotRelease.appendFRlockData2(snapshot.FlowRevenue.FlowLock,api.alien.db,startLNum,endLNum)
+		snapshotRelease.appendFRlockData2(snapshot.FlowRevenue.BandwidthLock,api.alien.db,startLNum,endLNum)
+		if number >= PledgeRevertLockEffectNumber{
+			snapshotRelease.appendFRlockData2(snapshot.FlowRevenue.PosPgExitLock,api.alien.db,startLNum,endLNum)
+		}
+		if isGEPOSNewEffect(number){
+			snapshotRelease.appendFRlockData2(snapshot.FlowRevenue.PosExitLock,api.alien.db,startLNum,endLNum)
+		}
+	}
+	return snapshotRelease, err
+}
+
+func (sr *SnapshotRelease) appendFRlockData2(lockData *LockData,db ethdb.Database,startLNum uint64,endLNum uint64) (error) {
+	sr.appendFR2(lockData.FlowRevenue,startLNum,endLNum)
+	items, err := lockData.loadCacheL1(db)
+	if err == nil {
+		sr.appendFRItems2(items,startLNum,endLNum)
+	}
+	items, err = lockData.loadCacheL2(db)
+	if err == nil {
+		sr.appendFRItems2(items,startLNum,endLNum)
+	}
+	return nil
+}
+func (s *SnapshotRelease) appendFRItems2(items []*PledgeItem,startLNum uint64,endLNum uint64) {
+	for _, item := range items {
+		if _, ok := s.FlowRevenue[item.TargetAddress]; !ok {
+			s.FlowRevenue[item.TargetAddress] = &LockBalanceData{
+				RewardBalance:make(map[uint32]*big.Int),
+				LockBalance: make(map[uint64]map[uint32]*PledgeItem),
+			}
+		}
+		if inLNumScope(item.StartHigh,startLNum,endLNum){
+			flowRevenusTarget := s.FlowRevenue[item.TargetAddress]
+			if _, ok := flowRevenusTarget.LockBalance[item.StartHigh]; !ok {
+				flowRevenusTarget.LockBalance[item.StartHigh] = make(map[uint32]*PledgeItem)
+			}
+			lockBalance := flowRevenusTarget.LockBalance[item.StartHigh]
+			lockBalance[item.PledgeType] = item
+		}
+	}
+}
+
+func (sr *SnapshotRelease) appendFR2(FlowRevenue map[common.Address]*LockBalanceData,startLNum uint64,endLNum uint64) (error) {
+	fr1:=FlowRevenue
+	for t1, item1 := range fr1 {
+		if _, ok := sr.FlowRevenue[t1]; !ok {
+			sr.FlowRevenue[t1] = &LockBalanceData{
+				RewardBalance:make(map[uint32]*big.Int),
+				LockBalance: make(map[uint64]map[uint32]*PledgeItem),
+			}
+		}
+		rewardBalance:=item1.RewardBalance
+		for t2, item2 := range rewardBalance {
+			sr.FlowRevenue[t1].RewardBalance[t2]=item2
+		}
+		lockBalance:=item1.LockBalance
+		for t3, item3 := range lockBalance {
+			if inLNumScope(t3,startLNum,endLNum){
+				if _, ok := sr.FlowRevenue[t1].LockBalance[t3]; !ok {
+					sr.FlowRevenue[t1].LockBalance[t3] = make(map[uint32]*PledgeItem)
+				}
+				t3LockBalance:=sr.FlowRevenue[t1].LockBalance[t3]
+				for t4,item4:=range item3{
+					if _, ok := t3LockBalance[t4]; !ok {
+						t3LockBalance[t4] = item4
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func inLNumScope(num uint64, startLNum uint64, endLNum uint64) bool {
+	if num>=startLNum&&num<=endLNum {
+		return true
+	}
+	return false
+}
+
+type SnapCanAutoExit struct {
+	CandidateAutoExit  []common.Address `json:"candidateautoexit"`
+}
+
+func (api *API) GetCandidateAutoExitAtNumber(number uint64) (*SnapCanAutoExit, error) {
+	log.Info("api GetCandidateAutoExitAtNumber", "number", number)
+	header := api.chain.GetHeaderByNumber(number)
+	if header == nil {
+		return nil, errUnknownBlock
+	}
+	headerExtra := HeaderExtra{}
+	err := rlp.DecodeBytes(header.Extra[extraVanity:len(header.Extra)-extraSeal], &headerExtra)
+	if err != nil {
+		log.Info("Fail to decode header Extra", "err", err)
+		return nil,err
+	}
+	snapCanAutoExit:=&SnapCanAutoExit{
+		CandidateAutoExit:make([]common.Address,0),
+	}
+	if len(headerExtra.CandidateAutoExit)>0 {
+		snapCanAutoExit.CandidateAutoExit=append(snapCanAutoExit.CandidateAutoExit,headerExtra.CandidateAutoExit...)
+	}
+	return snapCanAutoExit, err
+}
+
+
+func (api *API) ClearDbSnapDataAtNumber(startNumber uint64,number uint64) (error) {
+	log.Info("api clearDbSnapDataAtNumber", "startNumber", startNumber, "number", number)
+	header := api.chain.GetHeaderByNumber(number)
+	if header == nil {
+		log.Error("api clearDbSnapDataAtNumber", "err", errUnknownBlock,"startNumber", startNumber, "number", number)
+		return errUnknownBlock
+	}
+	blockPerDay:=api.alien.blockPerDay()
+	var clearEndNumber uint64
+	if header.Number.Uint64()>retainedLastSnapshot {
+		clearEndNumber = header.Number.Uint64() - retainedLastSnapshot
+		if clearEndNumber <= clearEndNumber%blockPerDay {
+			log.Info("api clearDbSnapDataAtNumber", "clearEndNumber is too small", clearEndNumber)
+			return nil
+		}
+		clearEndNumber = clearEndNumber - clearEndNumber%blockPerDay
+	}else{
+		log.Info("api clearDbSnapDataAtNumber", "clearEndNumber is too small", number)
+		return errNumberTooSmall
+	}
+	return clearSnapDataAtNumber(startNumber,clearEndNumber,api.chain,api.alien.blockPerDay(),api.alien.db,api.alien.config.Period)
+}
+func clearSnapDataAtNumber(startNumber uint64,number uint64,chain consensus.ChainHeaderReader,blockPerDay uint64, db ethdb.Database,period uint64) (error) {
+	log.Info("clearDbSnapDataAtNumber", "startNumber", startNumber, "number", number)
+	header := chain.GetHeaderByNumber(number)
+	if header == nil {
+		log.Error("clearDbSnapDataAtNumber", "err", errUnknownBlock,"startNumber", startNumber, "number", number)
+		return errUnknownBlock
+	}
+	if header.Number.Uint64()>retainedLastSnapshot{
+		clearEndNumber:=number
+		clearStartNumber:=startNumber
+		cacheL1:="l1"
+		cacheL2:="l2"
+
+		rewardCacheL1Hash := make(map[common.Hash]uint64)
+		rewardCacheL2Hash :=make(map[common.Hash]uint64)
+
+		flowCacheL1Hash := make(map[common.Hash]uint64)
+		flowCacheL2Hash :=make(map[common.Hash]uint64)
+
+		bandwidthCacheL1Hash := make(map[common.Hash]uint64)
+		bandwidthCacheL2Hash :=make(map[common.Hash]uint64)
+
+		posplexitCacheL1Hash := make(map[common.Hash]uint64)
+		posplexitCacheL2Hash :=make(map[common.Hash]uint64)
+
+		posexitCacheL1Hash := make(map[common.Hash]uint64)
+		posexitCacheL2Hash :=make(map[common.Hash]uint64)
+
+		for clearStartNumber < clearEndNumber {
+			removeHeader := chain.GetHeaderByNumber(clearStartNumber)
+			hash:= removeHeader.Hash()
+
+			if clearStartNumber%checkpointInterval == 0 {
+				snapshotKey:=append([]byte("alien-"), hash[:]...)
+				blob, err := db.Get(snapshotKey)
+				if err == nil {
+					snap := new(Snapshot)
+					if err2 := json.Unmarshal(blob, snap); err2 != nil {
+						log.Error("clearDbSnapDataAtNumber json.Unmarshal", "number", clearStartNumber, "hash", hash,"err",err2)
+					}else{
+						clearLockByCacheHash(LOCKREWARDDATA,snap.FlowRevenue.RewardLock, rewardCacheL1Hash, rewardCacheL2Hash,clearStartNumber, db)
+						clearLockByCacheHash(LOCKFLOWDATA,snap.FlowRevenue.FlowLock, flowCacheL1Hash, flowCacheL2Hash,clearStartNumber, db)
+						clearLockByCacheHash(LOCKBANDWIDTHDATA,snap.FlowRevenue.BandwidthLock, bandwidthCacheL1Hash, bandwidthCacheL2Hash,clearStartNumber, db)
+						if snap.FlowRevenue.PosPgExitLock!=nil{
+							clearLockByCacheHash(LOCKPOSEXITDATA,snap.FlowRevenue.PosPgExitLock, posplexitCacheL1Hash, posplexitCacheL2Hash,clearStartNumber, db)
+						}
+						if snap.FlowRevenue.PosExitLock!=nil{
+							clearLockByCacheHash(LOCKPEXITDATA,snap.FlowRevenue.PosExitLock, posexitCacheL1Hash, posexitCacheL2Hash,clearStartNumber, db)
+						}
+					}
+
+					if !islockSimplifyEffectBlocknumber(clearStartNumber){
+						clearRewardDbDataCheckHash(LOCKREWARDDATA,db,cacheL1,hash,clearStartNumber,rewardCacheL1Hash)
+					}
+					err = db.Delete(snapshotKey)
+					if err != nil {
+						log.Error("clearDbSnapDataAtNumber snapshot from disk", "number", clearStartNumber, "hash", hash,"err",err)
+					}else{
+						log.Info("clearDbSnapDataAtNumber snapshot from disk", "number", clearStartNumber, "hash", hash)
+					}
+				}
+			}
+
+			if clearStartNumber<tallyRevenueEffectBlockNumber{
+				if (clearStartNumber+1)%blockPerDay==0{
+					clearRewardDbDataCheckHash(LOCKREWARDDATA,db,cacheL2,hash,clearStartNumber,rewardCacheL2Hash)
+				}
+			}
+			//reward
+			if clearStartNumber%blockPerDay==0{
+				clearRewardDbDataCheckHash(LOCKREWARDDATA,db,cacheL1,hash,clearStartNumber,rewardCacheL1Hash)
+				clearRewardDbDataCheckHash(LOCKREWARDDATA,db,cacheL2,hash,clearStartNumber,rewardCacheL2Hash)
+			}
+			//flow,bandwidth,posplexit l1
+			if clearStartNumber%blockPerDay==(storageVerificationCheck/period){
+				clearRewardDbDataCheckHash(LOCKFLOWDATA,db,cacheL1,hash,clearStartNumber,flowCacheL1Hash)
+				clearRewardDbDataCheckHash(LOCKBANDWIDTHDATA,db,cacheL1,hash,clearStartNumber,bandwidthCacheL1Hash)
+				clearRewardDbDataCheckHash(LOCKPOSEXITDATA,db,cacheL1,hash,clearStartNumber,posplexitCacheL1Hash)
+
+				clearRewardDbDataCheckHash(LOCKFLOWDATA,db,cacheL2,hash,clearStartNumber,flowCacheL2Hash)
+				clearRewardDbDataCheckHash(LOCKBANDWIDTHDATA,db,cacheL2,hash,clearStartNumber,bandwidthCacheL2Hash)
+
+				if clearStartNumber >= StorageEffectBlockNumber {
+					keys:=[8]string{storagePleageKey,storageContractKey,storageCapSuccAddrsKey,revertSpaceLockRewardkey,revertExchangeSRTkey,storageRatioskey,storagePledgeRewardkey,storageLeaseRewardkey}
+					for _,key:=range keys{
+						clearDbDataByNumber(key,db,clearStartNumber)
+					}
+				}
+			}
+			if clearStartNumber%blockPerDay==(payFlowRewardInterval/period){
+				clearRewardDbDataCheckHash(LOCKFLOWDATA,db,cacheL2,hash,clearStartNumber,flowCacheL2Hash)
+			}
+			if clearStartNumber%blockPerDay==(payBandwidthRewardInterval/period){
+				clearRewardDbDataCheckHash(LOCKBANDWIDTHDATA,db,cacheL2,hash,clearStartNumber,bandwidthCacheL2Hash)
+			}
+			if clearStartNumber%blockPerDay==(payPOSPGRedeemInterval/period){
+				clearRewardDbDataCheckHash(LOCKPOSEXITDATA,db,cacheL2,hash,clearStartNumber,posplexitCacheL2Hash)
+			}
+			if clearStartNumber%blockPerDay==(payPOSExitInterval/period){
+				clearRewardDbDataCheckHash(LOCKPEXITDATA,db,cacheL2,hash,clearStartNumber,posexitCacheL2Hash)
+			}
+			if clearStartNumber%blockPerDay==(checkPOSAutoExit/period){
+				clearRewardDbDataCheckHash(LOCKREWARDDATA,db,cacheL2,hash,clearStartNumber,rewardCacheL2Hash)
+			}
+			if clearStartNumber==PosrNewCalEffectNumber{
+				clearRewardDbDataCheckHash(LOCKPOSEXITDATA,db,cacheL2,hash,clearStartNumber,posplexitCacheL2Hash)
+			}
+
+			clearStartNumber++
+		}
+
+		log.Info("clearDbSnapDataAtNumber end",
+			"len(rewardCacheL1Hash)", len(rewardCacheL1Hash), "rewardCacheL2Hash", len(rewardCacheL2Hash),
+			"len(flowCacheL1Hash)", len(flowCacheL1Hash), "flowCacheL2Hash", len(flowCacheL2Hash),
+			"len(bandwidthCacheL1Hash)", len(bandwidthCacheL1Hash), "bandwidthCacheL2Hash", len(bandwidthCacheL2Hash),
+			"len(posplexitCacheL1Hash)", len(posplexitCacheL1Hash), "posplexitCacheL2Hash", len(posplexitCacheL2Hash),
+			"len(posexitCacheL1Hash)", len(posexitCacheL1Hash), "posexitCacheL2Hash", len(posexitCacheL2Hash))
+
+		log.Info("clearDbSnapDataAtNumber end", "clearStartNumber", clearStartNumber, "clearEndNumber", clearEndNumber)
+	}
+	return nil
+}
+
+func (api *API) ViewDbDataAtNumber(startNumber uint64,number uint64) (error) {
+	log.Info("api viewDbDataAtNumber", "startNumber", startNumber,"number", number)
+	header := api.chain.GetHeaderByNumber(number)
+	if header == nil {
+		return errUnknownBlock
+	}
+	dayLimit:=30*api.alien.blockPerDay()
+	endNumber:=header.Number.Uint64()
+	if endNumber-dayLimit>startNumber{
+		startNumber=endNumber-dayLimit
+	}
+	log.Info("ViewDbDataAtNumber", "startNumber", startNumber, "endNumber", endNumber)
+	for startNumber <= endNumber {
+		removeHeader := api.chain.GetHeaderByNumber(startNumber)
+		hash:= removeHeader.Hash()
+		blob, err := api.alien.db.Get(append([]byte("alien-"), hash[:]...))
+		if err == nil {
+			log.Info("viewDbDataAtNumber snapshot from disk", "number", startNumber, "hash", hash,"len(blob)",len(blob))
+		}
+		lockTypes := [5]string{LOCKREWARDDATA,LOCKFLOWDATA,LOCKBANDWIDTHDATA,LOCKPOSEXITDATA,LOCKPEXITDATA}
+		for _,lockType:=range lockTypes{
+			api.loadCacheAtNumber(startNumber,api.alien.db,lockType,"l1",hash)
+			api.loadCacheAtNumber(startNumber,api.alien.db,lockType,"l2",hash)
+		}
+		keys:=[9]string{storagePleageKey,storageContractKey,storageCapSuccAddrsKey,revertSpaceLockRewardkey,revertExchangeSRTkey,storageRatioskey,storagePledgeRewardkey,storageLeaseRewardkey,"flow-%d"}
+		for _,key:=range keys{
+			api.isExitDiskDataByNumber(key,api.alien.db,startNumber)
+		}
+		startNumber++
+	}
+	log.Info("ViewDbDataAtNumber end", "startNumber", startNumber, "endNumber", endNumber)
+	return nil
+}
+
+func (api *API) loadCacheAtNumber(number uint64, db ethdb.Database,locktype string,cacheType string,hash common.Hash) (error) {
+	key := append([]byte("alien-"+locktype+"-"+cacheType+"-"), hash[:]...)
+	blob, err := db.Get(key)
+	if err != nil {
+		return err
+	}
+	int := bytes.NewBuffer(blob)
+	items := []*PledgeItem{}
+	err = rlp.Decode(int, &items)
+	if err != nil {
+		log.Info("loadCacheAtNumber decode err", "Locktype", locktype+" "+cacheType, "cache hash", hash, "size", len(items),"number",number)
+		return err
+	}
+	log.Info("loadCacheAtNumber", "Locktype", locktype+" "+cacheType, "cache hash", hash, "size", len(items),"number",number)
+	return err
+}
+
+func (api *API) isExitDiskDataByNumber(keyPre string,db ethdb.Database, number uint64) {
+	key := fmt.Sprintf(keyPre, number)
+	value,err:=db.Get([]byte(key))
+	if err==nil{
+		log.Info("api isExitDiskDataByNumber", "key",key,"len(value)", len(value))
+	}
+}
+
+func clearRewardDbData(rewardType string,db ethdb.Database, cacheL string, hash common.Hash,number uint64) {
+	keyPre:="alien-"+rewardType+"-"+cacheL+"-"
+	key := append([]byte(keyPre), hash[:]...)
+	err:= db.Delete(key)
+	if err!=nil{
+		log.Error("clearRewardDbData", "number", number, "hash",hash,"keyPre",keyPre,"err",err)
+	}else{
+		log.Info("clearRewardDbData", "number", number, "hash",hash,"keyPre",keyPre)
+	}
+}
+
+func clearDbDataByNumber(keyPre string,db ethdb.Database, number uint64) {
+	key := fmt.Sprintf(keyPre, number)
+	err:=db.Delete([]byte(key))
+	if err!=nil{
+		log.Error("clearDbDataByNumber", "key",key,"err", err)
+	}else{
+		log.Info("clearDbDataByNumber", "key",key)
+	}
+}
+
+func clearLockByCacheHash(lockType string, lock *LockData, cacheL1Hash map[common.Hash]uint64, cacheL2Hash map[common.Hash]uint64,number uint64, db ethdb.Database) {
+	cacheL1:="l1"
+	cacheL2:="l2"
+	for _,l1Hash:=range lock.CacheL1{
+		if _, ok := cacheL1Hash[l1Hash]; !ok {
+			clearRewardDbData(lockType,db,cacheL1,l1Hash,number)
+			cacheL1Hash[l1Hash]=1
+		}
+	}
+	l2Hash:=lock.CacheL2
+	if _, ok := cacheL2Hash[l2Hash]; !ok {
+		clearRewardDbData(lockType,db,cacheL2,l2Hash,number)
+		cacheL2Hash[l2Hash]=1
+	}
+}
+
+func clearRewardDbDataCheckHash(lockType string, db ethdb.Database, l string, hash common.Hash, number uint64, cacheHash map[common.Hash]uint64) {
+	if _, ok := cacheHash[hash]; !ok {
+		clearRewardDbData(lockType,db,l,hash,number)
+		cacheHash[hash]=1
+	}
+}
+
+func (api *API) isNumberTooSmall(header *types.Header) error {
+	//currentHeader := api.chain.CurrentHeader()
+	//if isLtClearSnapShotNumber(currentHeader.Number.Uint64()){
+	//	return nil
+	//}
+	//if (currentHeader.Number.Uint64()< retainedLastSnapshot)||(currentHeader.Number.Uint64()-retainedLastSnapshot>header.Number.Uint64()){
+	//	return errNumberTooSmall
+	//}
+	return nil
 }

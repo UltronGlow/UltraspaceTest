@@ -1336,10 +1336,11 @@ func setTxPool(ctx *cli.Context, cfg *core.TxPoolConfig) {
 	if ctx.GlobalIsSet(TxPoolRejournalFlag.Name) {
 		cfg.Rejournal = ctx.GlobalDuration(TxPoolRejournalFlag.Name)
 	}
+	cfg.PriceLimit = uint64(params.GGasPrice)
 	if ctx.GlobalIsSet(TxPoolPriceLimitFlag.Name) {
-		cfg.PriceLimit = ctx.GlobalUint64(TxPoolPriceLimitFlag.Name)
-		if cfg.PriceLimit < 176190476190 {
-			cfg.PriceLimit = 176190476190
+		//cfg.PriceLimit = ctx.GlobalUint64(TxPoolPriceLimitFlag.Name)
+		if cfg.PriceLimit < uint64(params.GGasPrice) {
+			cfg.PriceLimit = uint64(params.GGasPrice)
 		}
 	}
 	if ctx.GlobalIsSet(TxPoolPriceBumpFlag.Name) {
@@ -1403,10 +1404,11 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 	if ctx.GlobalIsSet(MinerGasLimitFlag.Name) {
 		cfg.GasCeil = ctx.GlobalUint64(MinerGasLimitFlag.Name)
 	}
+	cfg.GasPrice = big.NewInt(params.GGasPrice)
 	if ctx.GlobalIsSet(MinerGasPriceFlag.Name) {
-		cfg.GasPrice = GlobalBig(ctx, MinerGasPriceFlag.Name)
-		if 0 > cfg.GasPrice.Cmp(big.NewInt(176190476190)) {
-			cfg.GasPrice = big.NewInt(176190476190)
+		//cfg.GasPrice = GlobalBig(ctx, MinerGasPriceFlag.Name)
+		if 0 > cfg.GasPrice.Cmp(big.NewInt(params.GGasPrice)) {
+			cfg.GasPrice = big.NewInt(params.GGasPrice)
 		}
 	}
 	if ctx.GlobalIsSet(MinerRecommitIntervalFlag.Name) {
@@ -1677,7 +1679,7 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 			chaindb.Close()
 		}
 		if !ctx.GlobalIsSet(MinerGasPriceFlag.Name) {
-			cfg.Miner.GasPrice = big.NewInt(176190476190)
+			cfg.Miner.GasPrice = big.NewInt(params.GGasPrice)
 		}
 	default:
 		if cfg.NetworkId == 1 {

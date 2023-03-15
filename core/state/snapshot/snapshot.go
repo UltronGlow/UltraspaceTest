@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/UltronGlow/UltronGlow-Origin/common"
 	"github.com/UltronGlow/UltronGlow-Origin/core/rawdb"
@@ -95,6 +96,11 @@ var (
 	// that forms a cycle in the snapshot tree.
 	errSnapshotCycle = errors.New("snapshot cycle")
 )
+
+//Wait if the snapshot generation time exceeds the threshold
+const  wsThreshold=1*time.Minute
+//Time to wait for snapshot generation
+const  twsGeneration=10*time.Minute
 
 // Snapshot represents the functionality supported by a snapshot storage layer.
 type Snapshot interface {
@@ -627,6 +633,10 @@ func diffToDisk(bottom *diffLayer) *diskLayer {
 		res.genMarker = base.genMarker
 		res.genAbort = make(chan chan *generatorStats)
 		go res.generate(stats)
+		if time.Since(stats.start) > wsThreshold{
+			log.Info("wait snapshot generation","stats.accounts",stats.accounts,"please wait patiently,wait time",twsGeneration)
+			time.Sleep(twsGeneration)
+		}
 	}
 	return res
 }

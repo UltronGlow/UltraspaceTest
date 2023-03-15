@@ -164,7 +164,7 @@ var DefaultTxPoolConfig = TxPoolConfig{
 	Journal:   "transactions.rlp",
 	Rejournal: time.Hour,
 
-	PriceLimit: 176190476190,
+	PriceLimit:  uint64(params.GGasPrice),
 	PriceBump:  10,
 
 	AccountSlots: 16,
@@ -183,7 +183,7 @@ func (config *TxPoolConfig) sanitize() TxPoolConfig {
 		log.Warn("Sanitizing invalid txpool journal time", "provided", conf.Rejournal, "updated", time.Second)
 		conf.Rejournal = time.Second
 	}
-	if conf.PriceLimit < 176190476190 {
+	if conf.PriceLimit < uint64(params.GGasPrice) {
 		log.Warn("Sanitizing invalid txpool price limit", "provided", conf.PriceLimit, "updated", DefaultTxPoolConfig.PriceLimit)
 		conf.PriceLimit = DefaultTxPoolConfig.PriceLimit
 	}
@@ -427,8 +427,8 @@ func (pool *TxPool) GasPrice() *big.Int {
 // SetGasPrice updates the minimum price required by the transaction pool for a
 // new transaction, and drops all transactions below this threshold.
 func (pool *TxPool) SetGasPrice(price *big.Int) {
-	if 0 > price.Cmp(big.NewInt(176190476190)) {
-		price = big.NewInt(176190476190)
+	if 0 > price.Cmp(big.NewInt(params.GGasPrice)) {
+		price = big.NewInt(params.GGasPrice)
 	}
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
@@ -590,6 +590,7 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	// Make sure the transaction is signed properly.
 	from, err := types.Sender(pool.signer, tx)
 	if err != nil {
+		log.Warn("validateTx","signer",pool.signer,"error",err)
 		return ErrInvalidSender
 	}
 	// Drop non-local transactions under our own minimal accepted gas price or tip

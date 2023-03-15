@@ -45,24 +45,25 @@ func (s GrantProfitSlice) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 func (s GrantProfitSlice) Less(i, j int) bool {
 	//we need sort reverse, so ...
 	isLess := s[i].Amount.Cmp(s[j].Amount)
-	if isLess > 0 {
-		return true
-	} else if isLess < 0 {
-		return false
-	} else if isLess==0{
-		if s[i].BlockNumber>s[j].BlockNumber{
-			return true
-		}else if s[i].BlockNumber<s[j].BlockNumber{
-			return false
-		}else if s[i].BlockNumber==s[j].BlockNumber{
-			if s[i].Which>s[j].Which{
-				return true
-			}else if s[i].Which<s[j].Which{
-				return false
-			}
-		}
+	if isLess != 0 {
+		return isLess > 0
 	}
-	return bytes.Compare(s[i].MinerAddress.Bytes(), s[j].MinerAddress.Bytes()) > 0
+	if s[i].BlockNumber != s[j].BlockNumber {
+		return s[i].BlockNumber > s[j].BlockNumber
+	}
+	if s[i].Which != s[j].Which {
+		return s[i].Which > s[j].Which
+	}
+	if s[i].MinerAddress != s[j].MinerAddress {
+		return bytes.Compare(s[i].MinerAddress.Bytes(), s[j].MinerAddress.Bytes()) > 0
+	}
+	if s[i].RevenueAddress != s[j].RevenueAddress {
+		return bytes.Compare(s[i].RevenueAddress.Bytes(), s[j].RevenueAddress.Bytes()) > 0
+	}
+	if s[i].RevenueContract != s[j].RevenueContract {
+		return bytes.Compare(s[i].RevenueContract.Bytes(), s[j].RevenueContract.Bytes()) > 0
+	}
+	return bytes.Compare(s[i].MultiSignature.Bytes(), s[j].MultiSignature.Bytes()) > 0
 }
 
 type MultiSignatureData struct {

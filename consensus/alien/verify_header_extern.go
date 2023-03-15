@@ -38,6 +38,12 @@ const (
 	esrd_s    = "StorageRecoveryData"
 	espr_s    = "StorageProofRecord"
 	esep_s    = "StorageExchangePrice"
+	esbp_s    = "StorageBwPay"
+	epn_s     = "CandidatePledgeNew"
+	epent_s   = "CandidatePledgeEntrust"
+	epente_s  = "CandidatePEntrustExit"
+	eae_s     = "CandidateAutoExit"
+	ecr_s     = "CandidateChangeRate"
 )
 
 func verifyHeaderExtern(currentExtra *HeaderExtra, verifyExtra *HeaderExtra) error {
@@ -219,6 +225,39 @@ func verifyHeaderExtern(currentExtra *HeaderExtra, verifyExtra *HeaderExtra) err
 	//SRTDataRoot
 	if currentExtra.SRTDataRoot != verifyExtra.SRTDataRoot {
 		return errors.New("Compare SRTDataRoot, current is " + currentExtra.SRTDataRoot.String() + ". but verify is " + verifyExtra.SRTDataRoot.String())
+	}
+	//esbp_s    = "StorageBwPay"
+	err = verifyStorageBwPay(currentExtra.StorageBwPay, verifyExtra.StorageBwPay)
+	if err != nil {
+		return err
+	}
+	if currentExtra.GrantProfitHash != verifyExtra.GrantProfitHash {
+		return errors.New("Compare GrantProfitHash, current is " + currentExtra.GrantProfitHash.String() + ". but verify is " + verifyExtra.GrantProfitHash.String())
+	}
+	//epn_s    = "CandidatePledgeNew"
+	err = verifyCandidatePledgeNew(currentExtra.CandidatePledgeNew, verifyExtra.CandidatePledgeNew)
+	if err != nil {
+		return err
+	}
+	//epent_s   = "CandidatePledgeEntrust"
+	err = verifyCandidatePledgeEntrust(currentExtra.CandidatePledgeEntrust, verifyExtra.CandidatePledgeEntrust)
+	if err != nil {
+		return err
+	}
+	//epente_s   = "CandidatePEntrustExit"
+	err = verifyCandidatePEntrustExit(currentExtra.CandidatePEntrustExit, verifyExtra.CandidatePEntrustExit)
+	if err != nil {
+		return err
+	}
+	//eae_s     = "CandidateAutoExit"
+	err = verifyCandidateAutoExit(currentExtra.CandidateAutoExit, verifyExtra.CandidateAutoExit)
+	if err != nil {
+		return err
+	}
+	//ecr_s     = "CandidateChangeRate"
+	err = verifyCandidateChangeRate(currentExtra.CandidateChangeRate, verifyExtra.CandidateChangeRate)
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -1345,6 +1384,236 @@ func compareStorageExchangePrice(a []StorageExchangePriceRecord, b []StorageExch
 		}
 		if !find {
 			return errorsMsg4(esep_s, c)
+		}
+	}
+	return nil
+}
+func verifyStorageBwPay(current []StorageBwPayRecord, verify []StorageBwPayRecord) error {
+
+	arrLen, err := verifyArrayBasic(esbp_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+	err = compareStorageBwPay(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareStorageBwPay(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareStorageBwPay(a []StorageBwPayRecord, b []StorageBwPayRecord) error {
+	b2 := make([]StorageBwPayRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.Address == v.Address && c.Amount.Cmp(v.Amount) == 0 {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(esbp_s, c)
+		}
+	}
+	return nil
+}
+
+
+func verifyCandidatePledgeNew(current []CandidatePledgeNewRecord, verify []CandidatePledgeNewRecord) error {
+	arrLen, err := verifyArrayBasic(epn_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+	err = compareCandidatePledgeNew(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareCandidatePledgeNew(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareCandidatePledgeNew(a []CandidatePledgeNewRecord, b []CandidatePledgeNewRecord) error {
+	b2 := make([]CandidatePledgeNewRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.Target == v.Target && c.Amount.Cmp(v.Amount) == 0&& c.Manager == v.Manager&& c.Hash == v.Hash {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(epn_s, c)
+		}
+	}
+	return nil
+}
+
+func verifyCandidatePledgeEntrust(current []CandidatePledgeEntrustRecord, verify []CandidatePledgeEntrustRecord) error {
+	arrLen, err := verifyArrayBasic(epent_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+	err = compareCandidatePledgeEntrust(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareCandidatePledgeEntrust(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareCandidatePledgeEntrust(a []CandidatePledgeEntrustRecord, b []CandidatePledgeEntrustRecord) error {
+	b2 := make([]CandidatePledgeEntrustRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.Target == v.Target && c.Amount.Cmp(v.Amount) == 0&& c.Address == v.Address&& c.Hash == v.Hash {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(epent_s, c)
+		}
+	}
+	return nil
+}
+
+func verifyCandidatePEntrustExit(current []CandidatePEntrustExitRecord, verify []CandidatePEntrustExitRecord) error {
+	arrLen, err := verifyArrayBasic(epente_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+	err = compareCandidatePEntrustExit(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareCandidatePEntrustExit(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareCandidatePEntrustExit(a []CandidatePEntrustExitRecord, b []CandidatePEntrustExitRecord) error {
+	b2 := make([]CandidatePEntrustExitRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.Target == v.Target && c.Amount.Cmp(v.Amount) == 0&& c.Address == v.Address&& c.Hash == v.Hash {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(epent_s, c)
+		}
+	}
+	return nil
+}
+
+func verifyCandidateAutoExit(current []common.Address, verify []common.Address) error {
+	arrLen, err := verifyArrayBasic(eae_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+	err = compareCandidateAutoExit(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareCandidateAutoExit(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareCandidateAutoExit(a []common.Address, b []common.Address) error {
+	b2 := make([]common.Address, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c==v {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(eae_s, c)
+		}
+	}
+	return nil
+}
+
+
+func verifyCandidateChangeRate(current []CandidateChangeRateRecord, verify []CandidateChangeRateRecord) error {
+	arrLen, err := verifyArrayBasic(ecr_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+	err = compareCandidateChangeRate(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareCandidateChangeRate(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareCandidateChangeRate(a []CandidateChangeRateRecord, b []CandidateChangeRateRecord) error {
+	b2 := make([]CandidateChangeRateRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.Target == v.Target && c.Rate.Cmp(v.Rate) == 0 {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(ecr_s, c)
 		}
 	}
 	return nil

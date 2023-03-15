@@ -80,11 +80,15 @@ const rttMinConfidence = 0.1
 // behavior similar to our median peers.
 const ttlScaling = 3
 
+const ttlScalingSnap = 3*6
+
 // ttlLimit is the maximum timeout allowance to prevent reaching crazy numbers
 // if some unforeseen network events shappen. As much as we try to hone in on
 // the most optimal values, it doesn't make any sense to go above a threshold,
 // even if everything is slow and screwy.
 const ttlLimit = time.Minute
+
+const ttlLimitSnap = time.Minute*6
 
 // tuningConfidenceCap is the number of active peers above which to stop detuning
 // the confidence number. The idea here is that once we hone in on the capacity
@@ -98,6 +102,10 @@ const tuningConfidenceCap = 10
 // the current value.
 const tuningImpact = 0.25
 
+const (
+	EthTrackersType    = "eth"
+	SnapTrackersType   = "snap"
+)
 // Tracker estimates the throughput capacity of a peer with regard to each data
 // type it can deliver. The goal is to dynamically adjust request sizes to max
 // out network throughput without overloading either the peer or th elocal node.
@@ -240,17 +248,23 @@ type Trackers struct {
 
 	log  log.Logger
 	lock sync.RWMutex
+	trackersType string
 }
 
 // NewTrackers creates an empty set of trackers to be filled with peers.
-func NewTrackers(log log.Logger) *Trackers {
+func NewTrackers(log log.Logger,trackersType string) *Trackers {
+	overrideTTLLimit:=ttlLimit
+	if trackersType==SnapTrackersType{
+		overrideTTLLimit=ttlLimitSnap
+	}
 	return &Trackers{
 		trackers:         make(map[string]*Tracker),
 		roundtrip:        rttMaxEstimate,
 		confidence:       1,
 		tuned:            time.Now(),
-		OverrideTTLLimit: ttlLimit,
+		OverrideTTLLimit: overrideTTLLimit,
 		log:              log,
+		trackersType:trackersType,
 	}
 }
 
@@ -382,6 +396,9 @@ func (t *Trackers) TargetTimeout() time.Duration {
 // during QoS tuning.
 func (t *Trackers) targetTimeout() time.Duration {
 	timeout := time.Duration(ttlScaling * float64(t.roundtrip) / t.confidence)
+	if t.trackersType==SnapTrackersType{
+		timeout = time.Duration(ttlScalingSnap * float64(t.roundtrip) / t.confidence)
+	}
 	if timeout > t.OverrideTTLLimit {
 		timeout = t.OverrideTTLLimit
 	}

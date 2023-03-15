@@ -443,8 +443,8 @@ func startNode(ctx *cli.Context, stack *node.Node, backend ethapi.Backend) {
 		}
 		// Set the gas price to the limits from the CLI and start mining
 		gasprice := utils.GlobalBig(ctx, utils.MinerGasPriceFlag.Name)
-		if 0 > gasprice.Cmp(big.NewInt(176190476190)) {
-			gasprice = big.NewInt(176190476190)
+		if 0 > gasprice.Cmp(big.NewInt(params.GGasPrice)) {
+			gasprice = big.NewInt(params.GGasPrice)
 		}
 		ethBackend.TxPool().SetGasPrice(gasprice)
 		if backend.ChainConfig().Alien != nil {

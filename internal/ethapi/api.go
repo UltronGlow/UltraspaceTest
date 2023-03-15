@@ -62,11 +62,15 @@ func NewPublicutgAPI(b Backend) *PublicutgAPI {
 
 // GasPrice returns a suggestion for a gas price for legacy transactions.
 func (s *PublicutgAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
+	head := s.b.CurrentHeader()
+	if head.Number.Uint64()>=alien.PosAutoExitPunishChangeNumber{
+		return (*hexutil.Big)(big.NewInt(params.GGasPrice)),nil
+	}
 	tipcap, err := s.b.SuggestGasTipCap(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if head := s.b.CurrentHeader(); head.BaseFee != nil {
+	if head.BaseFee != nil {
 		tipcap.Add(tipcap, head.BaseFee)
 	}
 	return (*hexutil.Big)(tipcap), err
