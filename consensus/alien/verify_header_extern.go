@@ -27,23 +27,41 @@ const (
 	fr_s   = "FlowReport"
 	mfrt_s = "MinerFlowReportItem"
 
-	sp_s      = "StoragePledge"
-	spe_s     = "StoragePledgeExit"
-	sr_s      = "LeaseRequest"
-	esrt_s    = "ExchangeSRT"
-	esrpg_s   = "LeasePledge"
-	esrrn_s   = "LeaseRenewal"
-	esrrnpg_s = "LeaseRenewalPledge"
-	esrc_s    = "LeaseRescind"
-	esrd_s    = "StorageRecoveryData"
-	espr_s    = "StorageProofRecord"
-	esep_s    = "StorageExchangePrice"
-	esbp_s    = "StorageBwPay"
-	epn_s     = "CandidatePledgeNew"
-	epent_s   = "CandidatePledgeEntrust"
-	epente_s  = "CandidatePEntrustExit"
-	eae_s     = "CandidateAutoExit"
-	ecr_s     = "CandidateChangeRate"
+	sp_s       = "StoragePledge"
+	spe_s      = "StoragePledgeExit"
+	sr_s       = "LeaseRequest"
+	esrt_s     = "ExchangeSRT"
+	esrpg_s    = "LeasePledge"
+	esrrn_s    = "LeaseRenewal"
+	esrrnpg_s  = "LeaseRenewalPledge"
+	esrc_s     = "LeaseRescind"
+	esrd_s     = "StorageRecoveryData"
+	espr_s     = "StorageProofRecord"
+	esep_s     = "StorageExchangePrice"
+	esbp_s     = "StorageBwPay"
+	epn_s      = "CandidatePledgeNew"
+	epent_s    = "CandidatePledgeEntrust"
+	epente_s   = "CandidatePEntrustExit"
+	eae_s      = "CandidateAutoExit"
+	ecr_s      = "CandidateChangeRate"
+	scp_s      = "SpCreateParamter"
+	msm_s      = "ModifySManager"
+	sapp_s     = "SpAdjustPgParamter"
+	srsp_s     = "SpRemoveSnParamter"
+	csp_s      = "CompleteSPledge"
+	sprr_s     = "SPRewardRatio"
+	spp_s      = "SPPool"
+	spm_s      = "SPMigration"
+	sp2_s      = "StoragePledge2"
+	spet_s     = "SPEntrust"
+	spetpp_s   = "SpEttPledgeParamter"
+	spexitp_s  = "SpExitParameter"
+	spfeep_s   = "SpFeeParameter"
+	spetrtep_s = "SpEntrustParameter"
+	set_s      = "SETransfer"
+	see_s      = "SEExit"
+	post_s     = "POSTransfer"
+	SpBind_s   ="SpBind"
 )
 
 func verifyHeaderExtern(currentExtra *HeaderExtra, verifyExtra *HeaderExtra) error {
@@ -140,7 +158,7 @@ func verifyHeaderExtern(currentExtra *HeaderExtra, verifyExtra *HeaderExtra) err
 		return err
 	}
 	//FlowHarvest               *big.Int
-	err = verifyFlowHarvest(currentExtra.FlowHarvest, verifyExtra.FlowHarvest)
+	err = verifyBigInt(currentExtra.FlowHarvest, verifyExtra.FlowHarvest, "FlowHarvest")
 	if err != nil {
 		return err
 	}
@@ -256,6 +274,113 @@ func verifyHeaderExtern(currentExtra *HeaderExtra, verifyExtra *HeaderExtra) err
 	}
 	//ecr_s     = "CandidateChangeRate"
 	err = verifyCandidateChangeRate(currentExtra.CandidateChangeRate, verifyExtra.CandidateChangeRate)
+	if err != nil {
+		return err
+	}
+
+	//CurLeaseSpace               *big.Int
+	err = verifyBigInt(currentExtra.CurLeaseSpace, verifyExtra.CurLeaseSpace, "CurLeaseSpace")
+	if err != nil {
+		return err
+	}
+
+	//scp_s     = "SpCreateParamter"
+	err = verifySpCreateParamter(currentExtra.SpCreateParamter, verifyExtra.SpCreateParamter)
+	if err != nil {
+		return err
+	}
+	//msm_s     = "ModifySManager"
+	err = verifyModifySManager(currentExtra.ModifySManager, verifyExtra.ModifySManager)
+	if err != nil {
+		return err
+	}
+
+	//	sapp_s     = "SpAdjustPgParamter"
+	err = verifySpAdjustPgParamter(currentExtra.SpAdjustPgParamter, verifyExtra.SpAdjustPgParamter)
+	if err != nil {
+		return err
+	}
+	//	srsp_s     = "SpRemoveSnParamter"
+	err = verifySpRemoveSnParamter(currentExtra.SpRemoveSnParamter, verifyExtra.SpRemoveSnParamter)
+	if err != nil {
+		return err
+	}
+	//	csp_s     = "CompleteSPledge"
+	err = verifyCompleteSPledge(currentExtra.CompleteSPledge, verifyExtra.CompleteSPledge)
+	if err != nil {
+		return err
+	}
+	//sprr_s     = "SPRewardRatio"
+	err = verifySPRewardRatio(currentExtra.SPRewardRatio, verifyExtra.SPRewardRatio)
+	if err != nil {
+		return err
+	}
+	//spp_s     = "SPPool"
+	err = verifySPPool(currentExtra.SPPool, verifyExtra.SPPool)
+	if err != nil {
+		return err
+	}
+	//spm_s     = "SPMigration"
+	err = verifySPMigration(currentExtra.SPMigration, verifyExtra.SPMigration)
+	if err != nil {
+		return err
+	}
+	//sp2_s     = "StoragePledge2"
+	err = verifySPledge2(currentExtra.StoragePledge2, verifyExtra.StoragePledge2)
+	if err != nil {
+		return err
+	}
+	//spe_s     = "SPEntrust"
+	err = verifySPEntrust(currentExtra.SPEntrust, verifyExtra.SPEntrust)
+	if err != nil {
+		return err
+	}
+	// spetpp_s SpEttPledgeParamter
+	err = verifySpEttPledge(currentExtra.SpEttPledgeParamter, verifyExtra.SpEttPledgeParamter)
+	if err != nil {
+		return err
+	}
+	// spexitp_s  = "SpExitParameter"
+	err = verifySpExit(currentExtra.SpExitParameter, verifyExtra.SpExitParameter)
+	if err != nil {
+		return err
+	}
+	//spfeep_s   = "SpFeeParameter"
+	err = verifySpFee(currentExtra.SpFeeParameter, verifyExtra.SpFeeParameter)
+	if err != nil {
+		return err
+	}
+
+	//spetrtep_s = "SpEntrustParameter"
+	err = verifySpEntrust(currentExtra.SpEntrustParameter, verifyExtra.SpEntrustParameter)
+	if err != nil {
+		return err
+	}
+	//set_s      = "SETransfer"
+	err = verifySETransfer(currentExtra.SETransfer, verifyExtra.SETransfer)
+	if err != nil {
+		return err
+	}
+	//see_s      = "SEExit"
+	err = verifySEExit(currentExtra.SEExit, verifyExtra.SEExit)
+	if err != nil {
+		return err
+	}
+	//post_s      = "POSTransfer"
+	err = verifyPOSTransfer(currentExtra.POSTransfer, verifyExtra.POSTransfer)
+	if err != nil {
+		return err
+	}
+
+	if currentExtra.SpDataRoot != verifyExtra.SpDataRoot {
+		return errors.New("Compare SpDataRoot, current is " + currentExtra.SpDataRoot.String() + ". but verify is " + verifyExtra.SpDataRoot.String())
+	}
+	err = verifyExit(currentExtra.SPEPool, verifyExtra.SPEPool, "SPEPool")
+	if err != nil {
+		return err
+	}
+	//SpBind_s   ="SpBind"
+	err = verifySpBind(currentExtra.SpBind, verifyExtra.SpBind)
 	if err != nil {
 		return err
 	}
@@ -764,8 +889,7 @@ func compareManagerAddress(a []ManagerAddressRecord, b []ManagerAddressRecord) e
 	return nil
 }
 
-func verifyFlowHarvest(current *big.Int, verify *big.Int) error {
-	fh_s := "FlowHarvest"
+func verifyBigInt(current *big.Int, verify *big.Int, fh_s string) error {
 	if current == nil && verify == nil {
 		return nil
 	}
@@ -1427,7 +1551,6 @@ func compareStorageBwPay(a []StorageBwPayRecord, b []StorageBwPayRecord) error {
 	return nil
 }
 
-
 func verifyCandidatePledgeNew(current []CandidatePledgeNewRecord, verify []CandidatePledgeNewRecord) error {
 	arrLen, err := verifyArrayBasic(epn_s, current, verify)
 	if err != nil {
@@ -1453,7 +1576,7 @@ func compareCandidatePledgeNew(a []CandidatePledgeNewRecord, b []CandidatePledge
 	for _, c := range a {
 		find := false
 		for i, v := range b2 {
-			if c.Target == v.Target && c.Amount.Cmp(v.Amount) == 0&& c.Manager == v.Manager&& c.Hash == v.Hash {
+			if c.Target == v.Target && c.Amount.Cmp(v.Amount) == 0 && c.Manager == v.Manager && c.Hash == v.Hash {
 				find = true
 				b2 = append(b2[:i], b2[i+1:]...)
 				break
@@ -1491,7 +1614,7 @@ func compareCandidatePledgeEntrust(a []CandidatePledgeEntrustRecord, b []Candida
 	for _, c := range a {
 		find := false
 		for i, v := range b2 {
-			if c.Target == v.Target && c.Amount.Cmp(v.Amount) == 0&& c.Address == v.Address&& c.Hash == v.Hash {
+			if c.Target == v.Target && c.Amount.Cmp(v.Amount) == 0 && c.Address == v.Address && c.Hash == v.Hash {
 				find = true
 				b2 = append(b2[:i], b2[i+1:]...)
 				break
@@ -1529,7 +1652,7 @@ func compareCandidatePEntrustExit(a []CandidatePEntrustExitRecord, b []Candidate
 	for _, c := range a {
 		find := false
 		for i, v := range b2 {
-			if c.Target == v.Target && c.Amount.Cmp(v.Amount) == 0&& c.Address == v.Address&& c.Hash == v.Hash {
+			if c.Target == v.Target && c.Amount.Cmp(v.Amount) == 0 && c.Address == v.Address && c.Hash == v.Hash {
 				find = true
 				b2 = append(b2[:i], b2[i+1:]...)
 				break
@@ -1567,7 +1690,7 @@ func compareCandidateAutoExit(a []common.Address, b []common.Address) error {
 	for _, c := range a {
 		find := false
 		for i, v := range b2 {
-			if c==v {
+			if c == v {
 				find = true
 				b2 = append(b2[:i], b2[i+1:]...)
 				break
@@ -1579,7 +1702,6 @@ func compareCandidateAutoExit(a []common.Address, b []common.Address) error {
 	}
 	return nil
 }
-
 
 func verifyCandidateChangeRate(current []CandidateChangeRateRecord, verify []CandidateChangeRateRecord) error {
 	arrLen, err := verifyArrayBasic(ecr_s, current, verify)
@@ -1614,6 +1736,697 @@ func compareCandidateChangeRate(a []CandidateChangeRateRecord, b []CandidateChan
 		}
 		if !find {
 			return errorsMsg4(ecr_s, c)
+		}
+	}
+	return nil
+}
+
+func verifySpCreateParamter(current []SpApplyRecord, verify []SpApplyRecord) error {
+	arrLen, err := verifyArrayBasic(scp_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+	err = compareSpCreateParamter(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareSpCreateParamter(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareSpCreateParamter(a []SpApplyRecord, b []SpApplyRecord) error {
+	b2 := make([]SpApplyRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.Hash==v.Hash&&c.Manager == v.Manager&&c.RevenueAddress==v.RevenueAddress&& c.PledgeAmount.Cmp(v.PledgeAmount) == 0 && c.Capacity.Cmp(v.Capacity) == 0 && c.Fee == v.Fee && c.EntrustRate == v.EntrustRate &&c.PledgeHash==v.PledgeHash{
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(scp_s, c)
+		}
+	}
+	return nil
+}
+
+func verifyModifySManager(current []ModifySManagerRecord, verify []ModifySManagerRecord) error {
+	arrLen, err := verifyArrayBasic(msm_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+	err = compareModifySManager(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareModifySManager(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareModifySManager(a []ModifySManagerRecord, b []ModifySManagerRecord) error {
+	b2 := make([]ModifySManagerRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.Pledge == v.Pledge && c.Manager == v.Manager {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(msm_s, c)
+		}
+	}
+	return nil
+}
+
+func verifySpAdjustPgParamter(current []SpAdjustPledgeRecord, verify []SpAdjustPledgeRecord) error {
+	arrLen, err := verifyArrayBasic(sapp_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+	err = compareSpAdjustPgParamter(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareSpAdjustPgParamter(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareSpAdjustPgParamter(a []SpAdjustPledgeRecord, b []SpAdjustPledgeRecord) error {
+	b2 := make([]SpAdjustPledgeRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.Hash == v.Hash && c.PledgeAmount.Cmp(v.PledgeAmount) == 0 &&c.EtHash==v.EtHash{
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(sapp_s, c)
+		}
+	}
+	return nil
+}
+
+func verifySpRemoveSnParamter(current []SpRemoveSnRecord, verify []SpRemoveSnRecord) error {
+	arrLen, err := verifyArrayBasic(srsp_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+	err = compareSpRemoveSnParamter(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareSpRemoveSnParamter(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareSpRemoveSnParamter(a []SpRemoveSnRecord, b []SpRemoveSnRecord) error {
+	b2 := make([]SpRemoveSnRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.Hash == v.Hash && c.Address == v.Address {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(srsp_s, c)
+		}
+	}
+	return nil
+}
+
+func verifyCompleteSPledge(current []CompleteSPledgeRecord, verify []CompleteSPledgeRecord) error {
+	arrLen, err := verifyArrayBasic(csp_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+	err = compareCompleteSPledge(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareCompleteSPledge(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareCompleteSPledge(a []CompleteSPledgeRecord, b []CompleteSPledgeRecord) error {
+	b2 := make([]CompleteSPledgeRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.Pledge == v.Pledge && c.Amount.Cmp(v.Amount) == 0 && c.Hash == v.Hash {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(csp_s, c)
+		}
+	}
+	return nil
+}
+func verifySPRewardRatio(current []SPRewardRatioRecord, verify []SPRewardRatioRecord) error {
+	arrLen, err := verifyArrayBasic(sprr_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+	err = compareSPRewardRatio(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareSPRewardRatio(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareSPRewardRatio(a []SPRewardRatioRecord, b []SPRewardRatioRecord) error {
+	b2 := make([]SPRewardRatioRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.Pledge == v.Pledge && c.Rate.Cmp(v.Rate) == 0 {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(sprr_s, c)
+		}
+	}
+	return nil
+}
+
+func verifySPPool(current []SPPoolRecord, verify []SPPoolRecord) error {
+	arrLen, err := verifyArrayBasic(spp_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+	err = compareSPPool(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareSPPool(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareSPPool(a []SPPoolRecord, b []SPPoolRecord) error {
+	b2 := make([]SPPoolRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.Pledge == v.Pledge && c.Hash == v.Hash {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(spp_s, c)
+		}
+	}
+	return nil
+}
+
+func verifySPMigration(current []SPMigrationRecord, verify []SPMigrationRecord) error {
+	arrLen, err := verifyArrayBasic(spm_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+	err = compareSPMigration(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareSPMigration(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareSPMigration(a []SPMigrationRecord, b []SPMigrationRecord) error {
+	b2 := make([]SPMigrationRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.Pledge == v.Pledge && c.RootHash == v.RootHash {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(spm_s, c)
+		}
+	}
+	return nil
+}
+
+func verifySPledge2(current []SPledge2Record, verify []SPledge2Record) error {
+	arrLen, err := verifyArrayBasic(sp2_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+	err = compareSPledge2(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareSPledge2(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareSPledge2(a []SPledge2Record, b []SPledge2Record) error {
+	b2 := make([]SPledge2Record, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.PledgeAddr == v.PledgeAddr && c.Address == v.Address && c.Price.Cmp(v.Price) == 0 && c.SpaceDeposit.Cmp(v.SpaceDeposit) == 0 && c.StorageCapacity.Cmp(v.StorageCapacity) == 0 && c.StorageSize.Cmp(v.StorageSize) == 0 && c.RootHash == v.RootHash && c.PledgeNumber.Cmp(v.PledgeNumber) == 0 && c.Bandwidth.Cmp(v.Bandwidth) == 0 && c.PledgeAmount.Cmp(v.PledgeAmount) == 0 && c.EntrustRate.Cmp(v.EntrustRate) == 0 && c.Hash == v.Hash {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(sp2_s, c)
+		}
+	}
+	return nil
+}
+
+func verifySPEntrust(current []SPEntrustRecord, verify []SPEntrustRecord) error {
+	arrLen, err := verifyArrayBasic(spet_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+	err = compareSPEntrust(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareSPEntrust(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareSPEntrust(a []SPEntrustRecord, b []SPEntrustRecord) error {
+	b2 := make([]SPEntrustRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.Target == v.Target && c.Amount.Cmp(v.Amount) == 0 && c.Address == v.Address && c.Hash == v.Hash {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(spet_s, c)
+		}
+	}
+	return nil
+}
+
+// spexitp_s  = "SpExitParameter"
+func verifySpExit(current []common.Hash, verify []common.Hash) error {
+	arrLen, err := verifyArrayBasic(spexitp_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+	err = compareSpExitPledge(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareSpExitPledge(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareSpExitPledge(a []common.Hash, b []common.Hash) error {
+	b2 := make([]common.Hash, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c == v {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(spexitp_s, c)
+		}
+	}
+	return nil
+}
+
+// spfeep_s   = "SpFeeParameter"
+func verifySpFee(current []SpFeeRecord, verify []SpFeeRecord) error {
+	arrLen, err := verifyArrayBasic(spfeep_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+	err = compareSpFee(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareSpFee(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareSpFee(a []SpFeeRecord, b []SpFeeRecord) error {
+	b2 := make([]SpFeeRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.Hash == v.Hash && c.Fee == v.Fee {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(spfeep_s, c)
+		}
+	}
+	return nil
+}
+
+// spetrtep_s = "SpEntrustParameter"
+func verifySpEntrust(current []SpEntrustRateRecord, verify []SpEntrustRateRecord) error {
+	arrLen, err := verifyArrayBasic(spetrtep_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+	err = compareSpEntrust(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareSpEntrust(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareSpEntrust(a []SpEntrustRateRecord, b []SpEntrustRateRecord) error {
+	b2 := make([]SpEntrustRateRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.Hash == v.Hash && c.EntrustRate == v.EntrustRate {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(spetrtep_s, c)
+		}
+	}
+	return nil
+}
+func verifySpEttPledge(current []SpEntrustPledgeRecord, verify []SpEntrustPledgeRecord) error {
+	arrLen, err := verifyArrayBasic(spetpp_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+
+	err = compareSpEntrustPledge(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareSpEntrustPledge(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func compareSpEntrustPledge(a []SpEntrustPledgeRecord, b []SpEntrustPledgeRecord) error {
+	b2 := make([]SpEntrustPledgeRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.PledgeHash == v.PledgeHash && c.Address == v.Address && c.Hash == v.Hash && c.PledgeAmount.Cmp(v.PledgeAmount) == 0 && c.SpType == v.SpType && c.LockAmount.Cmp(v.LockAmount) == 0 && c.TargetHash == v.TargetHash && c.TargetType == v.TargetType && c.TargetAddress == v.TargetAddress && c.Capacity.Cmp(v.Capacity) == 0 {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(spetpp_s, c)
+		}
+	}
+	return nil
+
+}
+
+func verifySETransfer(current []SETransferRecord, verify []SETransferRecord) error {
+	arrLen, err := verifyArrayBasic(set_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+
+	err = compareSETransfer(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareSETransfer(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareSETransfer(a []SETransferRecord, b []SETransferRecord) error {
+	b2 := make([]SETransferRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.Address == v.Address && c.PledgeHash == v.PledgeHash   && c.Original == v.Original && c.TargetType == v.TargetType && c.Target == v.Target && c.TargetHash == v.TargetHash && c.PledgeAmount.Cmp(v.PledgeAmount) == 0 && c.LockAmount.Cmp(v.LockAmount) == 0 {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(set_s, c)
+		}
+	}
+	return nil
+}
+
+func verifySEExit(current []SEExitRecord, verify []SEExitRecord) error {
+	arrLen, err := verifyArrayBasic(see_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+
+	err = compareSEExit(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareSEExit(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareSEExit(a []SEExitRecord, b []SEExitRecord) error {
+	b2 := make([]SEExitRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.Target == v.Target && c.Hash == v.Hash   && c.Address == v.Address&& c.Amount.Cmp(v.Amount) == 0 {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(see_s, c)
+		}
+	}
+	return nil
+}
+
+
+func verifyPOSTransfer(current []POSTransferRecord, verify []POSTransferRecord) error {
+	arrLen, err := verifyArrayBasic(post_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+
+	err = comparePOSTransfer(current, verify)
+	if err != nil {
+		return err
+	}
+	err = comparePOSTransfer(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func comparePOSTransfer(a []POSTransferRecord, b []POSTransferRecord) error {
+	b2 := make([]POSTransferRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.Address == v.Address && c.PledgeHash == v.PledgeHash&& c.Original == v.Original && c.TargetType == v.TargetType&& c.Target == v.Target&& c.TargetHash == v.TargetHash&& c.PledgeAmount.Cmp(v.PledgeAmount) == 0 && c.LockAmount.Cmp(v.LockAmount) == 0{
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(post_s, c)
+		}
+	}
+	return nil
+}
+
+func verifySpBind(current []SpBindRecord, verify []SpBindRecord) error {
+	arrLen, err := verifyArrayBasic(SpBind_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+
+	err = compareSpBind(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareSpBind(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareSpBind(a []SpBindRecord, b []SpBindRecord) error {
+	b2 := make([]SpBindRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.Hash == v.Hash && c.RevenueAddress == v.RevenueAddress&& c.Bind == v.Bind {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(SpBind_s, c)
 		}
 	}
 	return nil

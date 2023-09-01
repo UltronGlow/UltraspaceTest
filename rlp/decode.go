@@ -74,7 +74,7 @@ type Decoder interface {
 // Note that Decode does not set an input limit for all readers and may be vulnerable to
 // panics cause by huge value sizes. If you need an input limit, use
 //
-//     NewStream(r, limit).Decode(val)
+//	NewStream(r, limit).Decode(val)
 func Decode(r io.Reader, val interface{}) error {
 	stream := streamPool.Get().(*Stream)
 	defer streamPool.Put(stream)
@@ -433,9 +433,10 @@ func makeStructDecoder(typ reflect.Type) (decoder, error) {
 					zeroFields(val, fields[i:])
 					break
 				}
-				if typ.Field(i).Name=="StoragePledge" || typ.Field(i).Name=="StoragePledgeExit" ||typ.Field(i).Name=="LeaseRequest" ||typ.Field(i).Name=="ExchangeSRT" ||typ.Field(i).Name=="LeasePledge" ||typ.Field(i).Name=="LeaseRenewal" ||typ.Field(i).Name=="LeaseRenewalPledge" ||typ.Field(i).Name=="LeaseRescind" ||typ.Field(i).Name=="StorageRecoveryData" ||typ.Field(i).Name=="StorageProofRecord" ||typ.Field(i).Name=="StorageExchangePrice" ||typ.Field(i).Name=="ExtraStateRoot" ||typ.Field(i).Name=="LockAccountsRoot" ||typ.Field(i).Name=="StorageDataRoot"||typ.Field(i).Name=="StorageExchangeBw" ||typ.Field(i).Name=="SRTDataRoot" || typ.Field(i).Name=="StorageBwPay" ||typ.Field(i).Name=="BurnAddress"||typ.Field(i).Name=="BurnRatio"||typ.Field(i).Name=="BurnAmount"||typ.Field(i).Name=="GrantProfitHash"||typ.Field(i).Name=="CandidatePledgeNew"||typ.Field(i).Name=="CandidatePledgeEntrust"||typ.Field(i).Name=="CandidatePEntrustExit"||typ.Field(i).Name=="CandidateAutoExit"||typ.Field(i).Name=="CandidateChangeRate"{
+				if typ.Field(i).Name == "StoragePledge" || typ.Field(i).Name == "StoragePledgeExit" || typ.Field(i).Name == "LeaseRequest" || typ.Field(i).Name == "ExchangeSRT" || typ.Field(i).Name == "LeasePledge" || typ.Field(i).Name == "LeaseRenewal" || typ.Field(i).Name == "LeaseRenewalPledge" || typ.Field(i).Name == "LeaseRescind" || typ.Field(i).Name == "StorageRecoveryData" || typ.Field(i).Name == "StorageProofRecord" || typ.Field(i).Name == "StorageExchangePrice" || typ.Field(i).Name == "ExtraStateRoot" || typ.Field(i).Name == "LockAccountsRoot" || typ.Field(i).Name == "StorageDataRoot" || typ.Field(i).Name == "StorageExchangeBw" || typ.Field(i).Name == "SRTDataRoot" || typ.Field(i).Name == "StorageBwPay" || typ.Field(i).Name == "BurnAddress" || typ.Field(i).Name == "BurnRatio" || typ.Field(i).Name == "BurnAmount" || typ.Field(i).Name == "GrantProfitHash" || typ.Field(i).Name == "CandidatePledgeNew" || typ.Field(i).Name == "CandidatePledgeEntrust" || typ.Field(i).Name == "CandidatePEntrustExit" || typ.Field(i).Name == "CandidateAutoExit" || typ.Field(i).Name == "CandidateChangeRate" || typ.Field(i).Name == "CurLeaseSpace" || typ.Field(i).Name == "SpCreateParamter" || typ.Field(i).Name == "ModifySManager" || typ.Field(i).Name == "SpAdjustPgParamter" || typ.Field(i).Name == "SpRemoveSnParamter" || typ.Field(i).Name == "CompleteSPledge" || typ.Field(i).Name == "SPRewardRatio" || typ.Field(i).Name == "SPPool" || typ.Field(i).Name == "SPMigration" || typ.Field(i).Name == "StoragePledge2" || typ.Field(i).Name == "SPEntrust" || typ.Field(i).Name == "SpEttPledgeParamter" || typ.Field(i).Name == "SpFeeParameter" || typ.Field(i).Name == "SpEntrustParameter" || typ.Field(i).Name == "SpExitParameter" || typ.Field(i).Name == "SETransfer" || typ.Field(i).Name == "SEExit" || typ.Field(i).Name == "POSTransfer" ||
+					typ.Field(i).Name == "RewardBalanceV1" || typ.Field(i).Name == "SpBind" || typ.Field(i).Name == "SpDataRoot" || typ.Field(i).Name == "SPEPool" {
 					zeroFields(val, fields[i:])
-				}else{
+				} else {
 					return &decodeError{msg: "too few elements", typ: typ}
 				}
 			} else if err != nil {

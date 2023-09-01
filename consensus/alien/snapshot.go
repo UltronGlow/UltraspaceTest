@@ -102,7 +102,6 @@ type NoticeCR struct {
 }
 
 // CCNotice (cross chain notice) contain the information main chain need to notify given side chain
-//
 type CCNotice struct {
 	CurrentCharging map[common.Hash]GasCharging `json:"currentCharging"` // common.Hash here is the proposal txHash not the hash of side chain
 	ConfirmReceived map[common.Hash]NoticeCR    `json:"confirmReceived"` // record the confirm address
@@ -128,9 +127,9 @@ type PledgeItem struct {
 	RevenueContract common.Address `json:"contractaddress"`
 	MultiSignature  common.Address `json:"multisignatureaddress"`
 
-	BurnAddress  common.Address `json:"burnaddress"`
-	BurnRatio *big.Int `json:"burnratio"`
-	BurnAmount  *big.Int `json:"burnamount"`
+	BurnAddress common.Address `json:"burnaddress"`
+	BurnRatio   *big.Int       `json:"burnratio"`
+	BurnAmount  *big.Int       `json:"burnamount"`
 }
 
 type ClaimedBandwidth struct {
@@ -172,10 +171,15 @@ type FULLBalanceData struct {
 }
 
 type LockBalanceData struct {
-	RewardBalance map[uint32]*big.Int               `json:"rewardbalance"`
-	LockBalance   map[uint64]map[uint32]*PledgeItem `json:"lockbalance"`
+	RewardBalance   map[uint32]*big.Int                        `json:"rewardbalance"`
+	LockBalance     map[uint64]map[uint32]*PledgeItem          `json:"lockbalance"`
+	RewardBalanceV1 map[uint32]map[common.Address]*LockTmpData `json:"rewardbalanceV1"`
+	LockBalanceV1   map[uint64]map[uint32]map[common.Address]*PledgeItem         `json:"lockbalanceV1"`
 }
-
+type LockTmpData struct {
+	Amount         *big.Int
+	RevenueAddress common.Address
+}
 type PosPledgeItem struct {
 	Manager     common.Address                `json:"manager"`
 	Active      uint64                        `json:"active"`
@@ -239,17 +243,19 @@ type Snapshot struct {
 	SCFlowPledge   map[common.Address]bool           `json:"scflowpledge"`
 	SCFULBalance   map[common.Address]*big.Int       `json:"fulbalance"`
 	SignerMissing  []common.Address                  `json:"signermissing"`
-	TallySigner       map[common.Address]uint64      `json:"tallySigner"`
+	TallySigner    map[common.Address]uint64         `json:"tallySigner"`
 	//StoragePledge      map[common.Address]*PledgeItem                    `json:"Storagepledge"`
 	StorageData *StorageData `json:"storagedata"`
 
-	ExStateRoot     common.Hash                    `json:"extrasstateRoot"`
-	GrantListRoot   common.Hash                    `json:"grantListRoot"`
-	RevenueStorage    map[common.Address]*RevenueParameter             `json:"storagerevenueaddress"`
-	SRT            SRTState                             `json:"-"`
-	SRTHash        common.Hash                          `json:"srthash"`
-	STGBandwidthMakeup   map[common.Address]*BandwidthMakeup      `json:"stgbandwidthmakeup"`
-	PosPledge            map[common.Address]*PosPledgeItem        `json:"pospledge"`
+	ExStateRoot        common.Hash                          `json:"extrasstateRoot"`
+	GrantListRoot      common.Hash                          `json:"grantListRoot"`
+	RevenueStorage     map[common.Address]*RevenueParameter `json:"storagerevenueaddress"`
+	SRT                SRTState                             `json:"-"`
+	SRTHash            common.Hash                          `json:"srthash"`
+	STGBandwidthMakeup map[common.Address]*BandwidthMakeup  `json:"stgbandwidthmakeup"`
+	PosPledge          map[common.Address]*PosPledgeItem    `json:"pospledge"`
+	TotalLeaseSpace    *big.Int                             `json:"totalleasespace"`
+	SpData             *SpData                              `json:"SpoolData"`
 }
 
 var (
@@ -307,7 +313,7 @@ func newSnapshot(config *params.AlienConfig, sigcache *lru.ARCCache, hash common
 		Bandwidth:       make(map[common.Address]*ClaimedBandwidth),
 		FlowHarvest:     big.NewInt(0),
 		FlowRevenue:     NewLockProfitSnap(),
-		StorageData : NewStorageSnap(),
+		StorageData:     NewStorageSnap(),
 		SystemConfig: SystemParameter{
 			ExchRate:       10000,
 			OffLine:        10000,
@@ -322,8 +328,9 @@ func newSnapshot(config *params.AlienConfig, sigcache *lru.ARCCache, hash common
 		SCFlowPledge:   make(map[common.Address]bool),
 		SCFULBalance:   make(map[common.Address]*big.Int),
 		SignerMissing:  []common.Address{},
-		TallySigner: make(map[common.Address]uint64),
-		RevenueStorage:  make(map[common.Address]*RevenueParameter),
+		TallySigner:    make(map[common.Address]uint64),
+		RevenueStorage: make(map[common.Address]*RevenueParameter),
+		SpData:         NewSPSnap(),
 	}
 	snap.HistoryHash = append(snap.HistoryHash, hash)
 
@@ -483,15 +490,15 @@ func loadSnapshot(config *params.AlienConfig, sigcache *lru.ARCCache, db ethdb.D
 	if _, ok := snap.SystemConfig.Deposit[sscEnumPosWithinCommitPeriod]; !ok || 0 > snap.SystemConfig.Deposit[sscEnumPosWithinCommitPeriod].Cmp(big.NewInt(0)) {
 		snap.SystemConfig.Deposit[sscEnumPosWithinCommitPeriod] = new(big.Int).Set(posWithinCommitPeriod)
 	}
-	nilHash:=common.Hash{}
-	if snap.SRTHash!=nilHash{
-		snap.SRT,err=NewSRT(snap.SRTHash,db)
-		if err!=nil {
-			return  nil,err
+	nilHash := common.Hash{}
+	if snap.SRTHash != nilHash {
+		snap.SRT, err = NewSRT(snap.SRTHash, db)
+		if err != nil {
+			return nil, err
 		}
-		err=snap.SRT.Load(db,snap.SRTHash)
-		if err!=nil {
-			return  nil,err
+		err = snap.SRT.Load(db, snap.SRTHash)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -578,50 +585,56 @@ func (s *Snapshot) copy() *Snapshot {
 		SCFlowPledge:   make(map[common.Address]bool),
 		SCFULBalance:   make(map[common.Address]*big.Int),
 		SignerMissing:  make([]common.Address, len(s.SignerMissing)),
-		TallySigner: make(map[common.Address]uint64),
-		ExStateRoot:s.ExStateRoot,
-		GrantListRoot:s.GrantListRoot,
-		RevenueStorage:  make(map[common.Address]*RevenueParameter),
+		TallySigner:    make(map[common.Address]uint64),
+		ExStateRoot:    s.ExStateRoot,
+		GrantListRoot:  s.GrantListRoot,
+		RevenueStorage: make(map[common.Address]*RevenueParameter),
 		SRT:            nil,
-		SRTHash: s.SRTHash,
+		SRTHash:        s.SRTHash,
 	}
-	if s.StorageData!=nil{
+	if s.StorageData != nil {
 		cpy.StorageData = s.StorageData.copy()
+	}
+	if s.SpData != nil {
+		cpy.SpData = s.SpData.copy()
 	}
 	if s.SRT != nil {
 		cpy.SRT = s.SRT.Copy()
 		cpy.SRTHash = cpy.SRT.Root()
 	}
-	if s.STGBandwidthMakeup!=nil{
-		cpy.STGBandwidthMakeup = make(map[common.Address]*BandwidthMakeup,0)
+	if s.STGBandwidthMakeup != nil {
+		cpy.STGBandwidthMakeup = make(map[common.Address]*BandwidthMakeup, 0)
 		for paddr, bw := range s.STGBandwidthMakeup {
 			cpy.STGBandwidthMakeup[paddr] = &BandwidthMakeup{
-				OldBandwidth:new(big.Int).Set(bw.OldBandwidth),
-				BurnRatio:new(big.Int).Set(bw.BurnRatio),
-				DepositMakeup:new(big.Int).Set(bw.DepositMakeup),
-				AdjustCount: bw.AdjustCount,
+				OldBandwidth:  new(big.Int).Set(bw.OldBandwidth),
+				BurnRatio:     new(big.Int).Set(bw.BurnRatio),
+				DepositMakeup: new(big.Int).Set(bw.DepositMakeup),
+				AdjustCount:   bw.AdjustCount,
 			}
 		}
 	}
-	if s.PosPledge!=nil{
-		cpy.PosPledge = make(map[common.Address]*PosPledgeItem,0)
+	if s.PosPledge != nil {
+		cpy.PosPledge = make(map[common.Address]*PosPledgeItem, 0)
 		for addr, item := range s.PosPledge {
 			cpy.PosPledge[addr] = &PosPledgeItem{
-				Manager:item.Manager,
-				Active:item.Active,
-				TotalAmount:new(big.Int).Set(item.TotalAmount),
-				Detail:make(map[common.Hash]*PledgeDetail,0),
-				LastPunish: item.LastPunish,
-				DisRate: new(big.Int).Set(item.DisRate),
+				Manager:     item.Manager,
+				Active:      item.Active,
+				TotalAmount: new(big.Int).Set(item.TotalAmount),
+				Detail:      make(map[common.Hash]*PledgeDetail, 0),
+				LastPunish:  item.LastPunish,
+				DisRate:     new(big.Int).Set(item.DisRate),
 			}
 			for hash, detail := range item.Detail {
-				cpy.PosPledge[addr].Detail[hash]=&PledgeDetail{
-					Address:detail.Address,
-					Height:detail.Height,
-					Amount:new(big.Int).Set(detail.Amount),
+				cpy.PosPledge[addr].Detail[hash] = &PledgeDetail{
+					Address: detail.Address,
+					Height:  detail.Height,
+					Amount:  new(big.Int).Set(detail.Amount),
 				}
 			}
 		}
+	}
+	if s.TotalLeaseSpace != nil {
+		cpy.TotalLeaseSpace = new(big.Int).Set(s.TotalLeaseSpace)
 	}
 	copy(cpy.HistoryHash, s.HistoryHash)
 	copy(cpy.Signers, s.Signers)
@@ -633,8 +646,8 @@ func (s *Snapshot) copy() *Snapshot {
 			Stake:     new(big.Int).Set(vote.Stake),
 		}
 	}
-	for candidate,signNumber:=range s.TallySigner{
-		cpy.TallySigner[candidate]= signNumber
+	for candidate, signNumber := range s.TallySigner {
+		cpy.TallySigner[candidate] = signNumber
 	}
 	for candidate, tally := range s.Tally {
 		cpy.Tally[candidate] = new(big.Int).Set(tally)
@@ -937,7 +950,7 @@ func (s *Snapshot) apply(headers []*types.Header, db ethdb.Database, chain conse
 		snap.updateSnapshotByVotes(headerExtra.CurrentBlockVotes, header.Number)
 
 		// deal the voter which balance modified
-		snap.updateSnapshotByMPVotes(headerExtra.ModifyPredecessorVotes,header.Number.Uint64())
+		snap.updateSnapshotByMPVotes(headerExtra.ModifyPredecessorVotes, header.Number.Uint64())
 
 		// deal the snap related with punished
 		snap.updateSnapshotForPunish(headerExtra.SignerMissing, header.Number, header.Coinbase)
@@ -980,24 +993,24 @@ func (s *Snapshot) apply(headers []*types.Header, db ethdb.Database, chain conse
 		snap.updateSnapshotForExpired(header.Number)
 
 		snap.updateFlowMiner(header, db)
-		snap.updateMinerStack(headerExtra.MinerStake,header.Number.Uint64())
+		snap.updateMinerStack(headerExtra.MinerStake, header.Number.Uint64())
 
-		if header.Number.Uint64() <PosrIncentiveEffectNumber{
-			snap.updateGrantProfit(headerExtra.GrantProfit, db,header.Hash(),header.Number.Uint64())
-		}else{
-			err=snap.updateGrantProfit2(headerExtra.GrantProfitHash,db,header)
-			if err!=nil{
-				return nil,err
+		if header.Number.Uint64() < PosrIncentiveEffectNumber {
+			snap.updateGrantProfit(headerExtra.GrantProfit, db, header.Hash(), header.Number.Uint64())
+		} else {
+			err = snap.updateGrantProfit2(headerExtra.GrantProfitHash, db, header)
+			if err != nil {
+				return nil, err
 			}
 		}
-		if header.Number.Uint64() == lockMergeNumber  {
-			snap.FlowRevenue.updateMergeLockData(db,snap.Period,snap.Hash)
+		if header.Number.Uint64() == lockMergeNumber {
+			snap.FlowRevenue.updateMergeLockData(db, snap.Period, snap.Hash)
 		}
 		snap.updateFlowRevenueRls(headerExtra.LockReward, header.Number)
 		snap.updateExchangeNFC(headerExtra.ExchangeNFC)
-		snap.updateDeviceBind(headerExtra.DeviceBind,header.Number.Uint64())
+		snap.updateDeviceBind(headerExtra.DeviceBind, header.Number.Uint64())
 		snap.updateCandidatePledge(headerExtra.CandidatePledge)
-		snap.updateCandidatePunish(headerExtra.CandidatePunish,header.Number.Uint64())
+		snap.updateCandidatePunish(headerExtra.CandidatePunish, header.Number.Uint64())
 		snap.updateCandidateExit(headerExtra.CandidateExit, header.Number)
 		snap.updateClaimedBandwidth(headerExtra.ClaimedBandwidth)
 		snap.updateFlowMinerExit(headerExtra.FlowMinerExit, header.Number)
@@ -1011,69 +1024,88 @@ func (s *Snapshot) apply(headers []*types.Header, db ethdb.Database, chain conse
 		snap.updateManagerAddress(headerExtra.ManagerAddress)
 		snap.updateLockParameters(headerExtra.LockParameters)
 		if header.Number.Uint64()%(snap.config.MaxSignerCount*snap.LCRS) == 0 && header.Number.Uint64() >= signFixBlockNumber {
-			snap.updateSignerNumber(headerExtra.SignerQueue,header.Number.Uint64())
+			snap.updateSignerNumber(headerExtra.SignerQueue, header.Number.Uint64())
 		}
-		if header.Number.Uint64() >=StorageEffectBlockNumber {
-			reSnap,err:= snap.storageApply(headerExtra,header, db)
-			if err!=nil{
-				return reSnap,nil
+		if header.Number.Uint64() >= StorageEffectBlockNumber {
+			reSnap, err := snap.storageApply(headerExtra, header, db)
+			if err != nil {
+				log.Error("snap.storageApply", "err", err)
+				return reSnap, nil
 			}
 		}
-		if header.Number.Uint64() ==(StorageEffectBlockNumber-1) {
-			snap.StorageData= NewStorageSnap()
+		if header.Number.Uint64() >= initStorageManagerNumber {
+			reSnap, err := snap.sPApply(headerExtra, header, db)
+			if err != nil {
+				log.Error("snap.sPApply", "err", err)
+				return reSnap, nil
+			}
 		}
-		if header.Number.Uint64() >= StorageChBwEffectNumber{
+		if header.Number.Uint64() == (StorageEffectBlockNumber - 1) {
+			snap.StorageData = NewStorageSnap()
+		}
+		if header.Number.Uint64() >= StorageChBwEffectNumber {
 			snap.updateStorageBandWidth(headerExtra.StorageExchangeBw, header.Number, nil)
 		}
-		if header.Number.Uint64() ==(PledgeRevertLockEffectNumber-1) {
-			snap.SRT,err = NewSRT(common.Hash{},db)
-			if err!=nil{
-				return snap,nil
+		if header.Number.Uint64() == (PledgeRevertLockEffectNumber - 1) {
+			snap.SRT, err = NewSRT(common.Hash{}, db)
+			if err != nil {
+				return snap, nil
 			}
-			snap.FlowRevenue.PosPgExitLock=NewLockData(LOCKPOSEXITDATA)
+			snap.FlowRevenue.PosPgExitLock = NewLockData(LOCKPOSEXITDATA)
 		}
-		if header.Number.Uint64() ==StoragePledgeOptEffectNumber{
+		if header.Number.Uint64() == StoragePledgeOptEffectNumber {
 			snap.initBandwidthMakeup(header.Number)
 		}
-		if header.Number.Uint64() ==PosrIncentiveEffectNumber{
+		if header.Number.Uint64() == PosrIncentiveEffectNumber {
 			snap.initBandwidthMakeup2(header.Number)
 		}
-		if header.Number.Uint64() ==(PosrIncentiveEffectNumber+BandwidthAdjustPeriodDay*snap.getBlockPreDay()){
-			snap.setBandwidthMakeupPunish(header,db)
+		if header.Number.Uint64() == (PosrIncentiveEffectNumber + BandwidthAdjustPeriodDay*snap.getBlockPreDay()) {
+			snap.setBandwidthMakeupPunish(header, db)
 		}
-		if header.Number.Uint64() ==PosrNewCalEffectNumber{
-			snap.fixStorageRevertRevenue(header,db)
+		if header.Number.Uint64() == PosrNewCalEffectNumber {
+			snap.fixStorageRevertRevenue(header, db)
 		}
-		if header.Number.Uint64() ==(PosNewEffectNumber-1) {
-			snap.PosPledge=make(map[common.Address]*PosPledgeItem,0)
-			snap.FlowRevenue.PosExitLock=NewLockData(LOCKPEXITDATA)
+		if header.Number.Uint64() == (PosNewEffectNumber - 1) {
+			snap.PosPledge = make(map[common.Address]*PosPledgeItem, 0)
+			snap.FlowRevenue.PosExitLock = NewLockData(LOCKPEXITDATA)
 			snap.initPosPledge(header.Number.Uint64())
-			snap.initPosExitPunish(header,db)
+			snap.initPosExitPunish(header, db)
 		}
-		if isGEPOSNewEffect(header.Number.Uint64()){
+		if isGEPOSNewEffect(header.Number.Uint64()) {
 			snap.updateCandidatePledgeNew(headerExtra.CandidatePledgeNew, header.Number.Uint64())
 			snap.updateCandidatePledgeEntrust(headerExtra.CandidatePledgeEntrust, header.Number.Uint64())
 			snap.updateCandidatePEntrustExit(headerExtra.CandidatePEntrustExit, header.Number)
-			snap.updateCandidateAutoExit(headerExtra.CandidateAutoExit, header,db)
-			snap.updateCandidateChangeRate(headerExtra.CandidateChangeRate, header,db)
-			if len(headerExtra.MinerStake) >0 || len(headerExtra.ModifyPredecessorVotes)  >0 {
+			snap.updateCandidateAutoExit(headerExtra.CandidateAutoExit, header, db)
+			snap.updateCandidateChangeRate(headerExtra.CandidateChangeRate, header, db)
+			if len(headerExtra.MinerStake) > 0 || len(headerExtra.ModifyPredecessorVotes) > 0 {
 				snap.deletePunishByPosExit(header.Number.Uint64())
 			}
 			snap.updateCandidateExit2(headerExtra.CandidateExit, header.Number)
 		}
-		if header.Number.Uint64()==PosLastPunishFixNumber{
+		if header.Number.Uint64() == PosLastPunishFixNumber {
 			snap.initPosExitPunishFix()
 		}
-		//if header.Number.Uint64()==(ClearSnapShotNumber-1){
-		//	go clearSnapDataAtNumber(0,header.Number.Uint64()-retainedLastSnapshot,chain,snap.getBlockPreDay(), db ,snap.Period)
-		//}
-		//if isClearSnapShotInterval(header.Number.Uint64(),snap.Period){
-		//	blockPerDay:=snap.getBlockPreDay()
-		//	clearEndNumber:= header.Number.Uint64() - retainedLastSnapshot
-		//	clearEndNumber = clearEndNumber - clearEndNumber%blockPerDay
-		//	startNumber:=clearEndNumber-blockPerDay
-		//	go clearSnapDataAtNumber(startNumber,clearEndNumber,chain,snap.getBlockPreDay(), db ,snap.Period)
-		//}
+		if header.Number.Uint64() == PoCrsAccCalNumber-1 {
+			snap.TotalLeaseSpace = new(big.Int).Set(initTotalLeaseSpace)
+		}
+		if isGEPoCrsAccCalNumber(header.Number.Uint64()) {
+			snap.updateTotalLeaseSpace(headerExtra.CurLeaseSpace)
+		}
+		if header.Number.Uint64() == (initStorageManagerNumber - 1) {
+			snap.initStorageManager()
+			snap.FlowRevenue.STPEntrustExitLock = NewLockData(LOCKSTPEEXITDATA)
+			snap.FlowRevenue.STPEntrustLock = NewLockData(LOCKSTPEDATA)
+			snap.FlowRevenue.SpLock = NewLockData(LOCKSPLOCKDATA)
+			snap.FlowRevenue.SpEntrustLock = NewLockData(LOCKSPETTTDATA)
+			snap.FlowRevenue.SpExitLock = NewLockData(LOCKSPEXITDATA)
+			snap.FlowRevenue.SpEntrustExitLock = NewLockData(LOCKSPETTEXITDATA)
+			snap.SpData = NewSPSnap()
+			snap.initSpData(header.Number.Uint64())
+		}
+
+		if isGEInitStorageManagerNumber(header.Number.Uint64()){
+			snap.updatePOSTransfer(headerExtra.POSTransfer,header.Number)
+		}
 	}
 	snap.Number += uint64(len(headers))
 	snap.Hash = headers[len(headers)-1].Hash()
@@ -1083,7 +1115,7 @@ func (s *Snapshot) apply(headers []*types.Header, db ethdb.Database, chain conse
 	if err != nil {
 		return nil, err
 	}
-	if snap.SRT!=nil{
+	if snap.SRT != nil {
 		snap.SRTHash, err = snap.SRT.Save(db)
 		if err != nil {
 			return nil, err
@@ -1235,7 +1267,7 @@ func (snap *Snapshot) updateClaimedBandwidth(claimedBandwidth []ClaimedBandwidth
 }
 
 func (snap *Snapshot) updateCandidateExit(candidateExit []common.Address, headerNumber *big.Int) {
-	if isGEPOSNewEffect(headerNumber.Uint64()){
+	if isGEPOSNewEffect(headerNumber.Uint64()) {
 		return
 	}
 	for _, item := range candidateExit {
@@ -1268,14 +1300,14 @@ func (snap *Snapshot) updateCandidatePunish(candidatePunish []CandidatePunishRec
 				snap.Punished[item.Target] -= uint64(item.Credit)
 			} else {
 				delete(snap.Punished, item.Target)
-				if isGEPOSNewEffect(number){
+				if isGEPOSNewEffect(number) {
 					if _, ok2 := snap.PosPledge[item.Target]; ok2 {
-						snap.PosPledge[item.Target].LastPunish=0
+						snap.PosPledge[item.Target].LastPunish = 0
 					}
 				}
 			}
 		}
-		if !isGEPOSNewEffect(number){
+		if !isGEPOSNewEffect(number) {
 			if _, ok := snap.CandidatePledge[item.Target]; ok {
 				snap.CandidatePledge[item.Target].Amount = new(big.Int).Add(snap.CandidatePledge[item.Target].Amount, item.Amount)
 			} else {
@@ -1301,7 +1333,7 @@ func (snap *Snapshot) updateCandidatePledge(candidatePledge []CandidatePledgeRec
 	}
 }
 
-func (snap *Snapshot) updateDeviceBind(deviceBind []DeviceBindRecord,headerNumber uint64) {
+func (snap *Snapshot) updateDeviceBind(deviceBind []DeviceBindRecord, headerNumber uint64) {
 	for _, item := range deviceBind {
 		if item.Type == 0 {
 			if item.Bind {
@@ -1314,7 +1346,7 @@ func (snap *Snapshot) updateDeviceBind(deviceBind []DeviceBindRecord,headerNumbe
 				delete(snap.RevenueNormal, item.Device)
 			}
 		} else {
-			if headerNumber >=StorageEffectBlockNumber {
+			if headerNumber >= StorageEffectBlockNumber {
 				if item.Bind {
 					snap.RevenueStorage[item.Device] = &RevenueParameter{
 						RevenueAddress:  item.Revenue,
@@ -1324,7 +1356,7 @@ func (snap *Snapshot) updateDeviceBind(deviceBind []DeviceBindRecord,headerNumbe
 				} else {
 					delete(snap.RevenueStorage, item.Device)
 				}
-			}else{
+			} else {
 				if item.Bind {
 					snap.RevenueFlow[item.Device] = &RevenueParameter{
 						RevenueAddress:  item.Revenue,
@@ -1373,10 +1405,10 @@ func (snap *Snapshot) updateGrantProfit(grantProfit []consensus.GrantProfitRecor
 			}
 		}
 	}
-	snap.FlowRevenue.updateGrantProfit(grantProfit, db,headerHash,number)
+	snap.FlowRevenue.updateGrantProfit(grantProfit, db, headerHash, number)
 }
 
-func (snap *Snapshot) updateMinerStack(minerStake []MinerStakeRecord,headerNumber uint64,) {
+func (snap *Snapshot) updateMinerStack(minerStake []MinerStakeRecord, headerNumber uint64) {
 	for _, item := range minerStake {
 		if _, ok := snap.TallyMiner[item.Target]; ok {
 			snap.TallyMiner[item.Target].Stake = new(big.Int).Set(item.Stake)
@@ -1386,7 +1418,7 @@ func (snap *Snapshot) updateMinerStack(minerStake []MinerStakeRecord,headerNumbe
 				Stake:        new(big.Int).Set(item.Stake),
 			}
 		}
-		snap.checkPosPledgePunish(item.Target,headerNumber)
+		snap.checkPosPledgePunish(item.Target, headerNumber)
 
 	}
 }
@@ -1422,8 +1454,8 @@ func (snap *Snapshot) updateFlowMiner(header *types.Header, db ethdb.Database) {
 }
 
 func (s *Snapshot) updateFlowRevenueRls(LockReward []LockRewardRecord, headerNumber *big.Int) {
-
 	s.FlowRevenue.updateLockData(s, LockReward, headerNumber)
+	s.FlowRevenue.updateAllLockDataNew(s,headerNumber)
 
 }
 
@@ -1923,9 +1955,9 @@ func (s *Snapshot) updateSnapshotForExpired(headerNumber *big.Int) {
 	for voterAddress, voteNumber := range s.Voters {
 		// clear the vote
 		if expiredVote, ok := s.Votes[voterAddress]; ok {
-			throldValue:=new(big.Int).Set(s.MinVB)
+			throldValue := new(big.Int).Set(s.MinVB)
 			if headerNumber.Uint64() >= PosNewEffectNumber {
-				throldValue=big.NewInt(0)
+				throldValue = big.NewInt(0)
 			}
 			if headerNumber.Uint64()-voteNumber.Uint64() > s.config.Epoch || (checkBalance && s.Votes[voterAddress].Stake.Cmp(throldValue) < 0) {
 				expiredVotes = append(expiredVotes, expiredVote)
@@ -1942,7 +1974,7 @@ func (s *Snapshot) updateSnapshotForExpired(headerNumber *big.Int) {
 					if s.Tally[expiredVote.Candidate].Cmp(big.NewInt(0)) < 0 {
 						delete(s.Tally, expiredVote.Candidate)
 					}
-				}else{
+				} else {
 					if s.Tally[expiredVote.Candidate].Cmp(big.NewInt(0)) == 0 {
 						delete(s.Tally, expiredVote.Candidate)
 					}
@@ -1966,7 +1998,7 @@ func (s *Snapshot) updateSnapshotForExpired(headerNumber *big.Int) {
 			if tally.Cmp(big.NewInt(0)) < 0 {
 				delete(s.Tally, address)
 			}
-		}else{
+		} else {
 			if tally.Cmp(big.NewInt(0)) <= 0 {
 				delete(s.Tally, address)
 			}
@@ -1997,9 +2029,9 @@ func (s *Snapshot) updateSnapshotByConfirmations(confirmations []Confirmation) {
 }
 
 func (s *Snapshot) updateSnapshotByVotes(votes []Vote, headerNumber *big.Int) {
-	if headerNumber.Uint64() >= PosNewEffectNumber{
-		s.updateSnapshotByVotesV2(votes,headerNumber)
-	}else{
+	if headerNumber.Uint64() >= PosNewEffectNumber {
+		s.updateSnapshotByVotesV2(votes, headerNumber)
+	} else {
 		for _, vote := range votes {
 			// update Votes, Tally, Voters data
 			if lastVote, ok := s.Votes[vote.Voter]; ok {
@@ -2039,20 +2071,20 @@ func (s *Snapshot) updateSnapshotByVotesV2(votes []Vote, headerNumber *big.Int) 
 
 		s.Votes[vote.Voter] = &Vote{vote.Voter, vote.Candidate, big.NewInt(0)}
 		s.Voters[vote.Voter] = headerNumber
-		if _,ok:=s.PosPledge[vote.Candidate];!ok{
-			s.PosPledge[vote.Candidate]=&PosPledgeItem{
-				Manager:vote.Voter,
-				Active :headerNumber.Uint64(),
-				TotalAmount :big.NewInt(0),
-				LastPunish:0,
-				DisRate: new(big.Int).Set(posDistributionDefaultRate),
-				Detail: make(map[common.Hash]*PledgeDetail),
+		if _, ok := s.PosPledge[vote.Candidate]; !ok {
+			s.PosPledge[vote.Candidate] = &PosPledgeItem{
+				Manager:     vote.Voter,
+				Active:      headerNumber.Uint64(),
+				TotalAmount: big.NewInt(0),
+				LastPunish:  0,
+				DisRate:     new(big.Int).Set(posDistributionDefaultRate),
+				Detail:      make(map[common.Hash]*PledgeDetail),
 			}
 		}
 	}
 }
 
-func (s *Snapshot) updateSnapshotByMPVotes(votes []Vote,headerNumber uint64) {
+func (s *Snapshot) updateSnapshotByMPVotes(votes []Vote, headerNumber uint64) {
 	for _, txVote := range votes {
 
 		if lastVote, ok := s.Votes[txVote.Voter]; ok {
@@ -2060,7 +2092,7 @@ func (s *Snapshot) updateSnapshotByMPVotes(votes []Vote,headerNumber uint64) {
 			s.Tally[lastVote.Candidate].Add(s.Tally[lastVote.Candidate], txVote.Stake)
 			s.Votes[txVote.Voter] = &Vote{Voter: txVote.Voter, Candidate: lastVote.Candidate, Stake: txVote.Stake}
 			// do not modify header number of snap.Voters
-			s.checkPosPledgePunish(lastVote.Candidate,headerNumber)
+			s.checkPosPledgePunish(lastVote.Candidate, headerNumber)
 		}
 
 	}
@@ -2096,13 +2128,13 @@ func (s *Snapshot) updateSnapshotForPunish(signerMissing []common.Address, heade
 		if _, ok := s.Punished[sigerAddr]; ok {
 			if s.Punished[sigerAddr] > autoRewardCredit {
 				s.Punished[sigerAddr] -= autoRewardCredit
-				s.updatePosPledgePunish(sigerAddr,headerNumber.Uint64(), headerNumber.Uint64())
+				s.updatePosPledgePunish(sigerAddr, headerNumber.Uint64(), headerNumber.Uint64())
 			} else {
 				delete(s.Punished, sigerAddr)
-				s.updatePosPledgePunish(sigerAddr,0, headerNumber.Uint64())
+				s.updatePosPledgePunish(sigerAddr, 0, headerNumber.Uint64())
 			}
-		}else{
-			s.updatePosPledgePunish(sigerAddr,0, headerNumber.Uint64())
+		} else {
+			s.updatePosPledgePunish(sigerAddr, 0, headerNumber.Uint64())
 		}
 
 	}
@@ -2300,33 +2332,33 @@ func (s *Snapshot) calculateSCReward(minerReward *big.Int) (map[common.Address]*
 	}
 	return scRewards, minerLeft
 }
-func (s *Snapshot) updateTallyState(state *state.StateDB) [] Vote {
-	var tallyVote [] Vote
-	for tallyAddress,vote :=range s.Votes {
-		amount :=state.GetBalance(tallyAddress)
+func (s *Snapshot) updateTallyState(state *state.StateDB) []Vote {
+	var tallyVote []Vote
+	for tallyAddress, vote := range s.Votes {
+		amount := state.GetBalance(tallyAddress)
 		if revenue, ok := s.RevenueNormal[tallyAddress]; ok {
 			amount = new(big.Int).Add(amount, state.GetBalance(revenue.RevenueAddress))
 		}
 		tallyVote = append(tallyVote, Vote{
-			Voter :  vote.Voter,
-			Candidate : vote.Candidate,
-			Stake : amount,
+			Voter:     vote.Voter,
+			Candidate: vote.Candidate,
+			Stake:     amount,
 		})
 
 	}
 	return tallyVote
 }
-func (s *Snapshot) updateTallyStateV2() [] Vote {
-	var tallyVote [] Vote
-	for tallyAddress,vote :=range s.Votes {
-		amount :=big.NewInt(0)
+func (s *Snapshot) updateTallyStateV2() []Vote {
+	var tallyVote []Vote
+	for tallyAddress, vote := range s.Votes {
+		amount := big.NewInt(0)
 		if item, ok := s.PosPledge[tallyAddress]; ok {
 			amount = new(big.Int).Add(amount, item.TotalAmount)
 		}
 		tallyVote = append(tallyVote, Vote{
-			Voter :  vote.Voter,
-			Candidate : vote.Candidate,
-			Stake : amount,
+			Voter:     vote.Voter,
+			Candidate: vote.Candidate,
+			Stake:     amount,
 		})
 
 	}
@@ -2364,7 +2396,7 @@ func (s *Snapshot) updateMinerState(state *state.StateDB) []MinerStakeRecord {
 func (s *Snapshot) updateMinerStateV2() []MinerStakeRecord {
 	var tallyMiner []MinerStakeRecord
 	for minerAddress, pledge := range s.PosPledge {
-		if _,ok:=s.Tally[minerAddress];ok {
+		if _, ok := s.Tally[minerAddress]; ok {
 			continue
 		}
 		if credit, ok := s.Punished[minerAddress]; ok && defaultFullCredit-minCalSignerQueueCredit >= credit {
@@ -2388,22 +2420,21 @@ func (s *Snapshot) updateMinerStateV2() []MinerStakeRecord {
 }
 func (s *Snapshot) updateSignerNumber(sigers []common.Address, headerNumber uint64) {
 
-
 	for _, minerAddress := range sigers {
 		if _, ok := s.TallyMiner[minerAddress]; ok {
 			s.TallyMiner[minerAddress].SignerNumber += 1
 		}
-		if headerNumber>=SigerElectNewEffectBlockNumber{
-			if _,ok := s.Tally[minerAddress];ok {
-				if _,isOk := s.TallySigner[minerAddress];isOk{
-					s.TallySigner[minerAddress] =s.TallySigner[minerAddress]+1
-				}else{
-					s.TallySigner[minerAddress]=1
+		if headerNumber >= SigerElectNewEffectBlockNumber {
+			if _, ok := s.Tally[minerAddress]; ok {
+				if _, isOk := s.TallySigner[minerAddress]; isOk {
+					s.TallySigner[minerAddress] = s.TallySigner[minerAddress] + 1
+				} else {
+					s.TallySigner[minerAddress] = 1
 				}
 			}
 		}
 	}
-	if headerNumber>=SigerElectNewEffectBlockNumber {
+	if headerNumber >= SigerElectNewEffectBlockNumber {
 		if headerNumber%clearSignNumberPerid == 0 {
 			for address, _ := range s.TallySigner {
 				s.TallySigner[address] = 0
@@ -2416,7 +2447,7 @@ func (s *Snapshot) updateSignerNumber(sigers []common.Address, headerNumber uint
 }
 
 func (pitem *PledgeItem) copy() *PledgeItem {
-	copyItem:=&PledgeItem{
+	copyItem := &PledgeItem{
 		Amount:          new(big.Int).Set(pitem.Amount),
 		PledgeType:      pitem.PledgeType,
 		Playment:        new(big.Int).Set(pitem.Playment),
@@ -2428,13 +2459,13 @@ func (pitem *PledgeItem) copy() *PledgeItem {
 		RevenueAddress:  pitem.RevenueAddress,
 		RevenueContract: pitem.RevenueContract,
 		MultiSignature:  pitem.MultiSignature,
-		BurnAddress: pitem.BurnAddress,
+		BurnAddress:     pitem.BurnAddress,
 	}
-	if pitem.BurnRatio!=nil{
-		copyItem.BurnRatio=new(big.Int).Set(pitem.BurnRatio)
+	if pitem.BurnRatio != nil {
+		copyItem.BurnRatio = new(big.Int).Set(pitem.BurnRatio)
 	}
-	if pitem.BurnAmount!=nil{
-		copyItem.BurnAmount=new(big.Int).Set(pitem.BurnAmount)
+	if pitem.BurnAmount != nil {
+		copyItem.BurnAmount = new(big.Int).Set(pitem.BurnAmount)
 	}
 	return copyItem
 }
@@ -2452,9 +2483,9 @@ func NewPledgeItem(amount *big.Int) *PledgeItem {
 		RevenueAddress:  common.Address{},
 		RevenueContract: common.Address{},
 		MultiSignature:  common.Address{},
-		BurnAddress: common.Address{},
-		BurnRatio: common.Big0,
-		BurnAmount: common.Big0,
+		BurnAddress:     common.Address{},
+		BurnRatio:       common.Big0,
+		BurnAmount:      common.Big0,
 	}
 }
 
@@ -2468,8 +2499,8 @@ func (f *FlowMinerReport) copy() *FlowMinerReport {
 	}
 }
 
-func(snap *Snapshot) calGrantProfitHash(profit []consensus.GrantProfitRecord) common.Hash {
-	grantProfitSlice:=consensus.GrantProfitSlice(profit)
+func (snap *Snapshot) calGrantProfitHash(profit []consensus.GrantProfitRecord) common.Hash {
+	grantProfitSlice := consensus.GrantProfitSlice(profit)
 	sort.Sort(grantProfitSlice)
 	hasher := sha3.NewLegacyKeccak256()
 	rlp.Encode(hasher, grantProfitSlice)
@@ -2477,7 +2508,7 @@ func(snap *Snapshot) calGrantProfitHash(profit []consensus.GrantProfitRecord) co
 	hasher.Sum(hash[:0])
 	return hash
 }
-func (s *Snapshot) calPayProfit(db ethdb.Database,header *types.Header) ([]consensus.GrantProfitRecord, error) {
+func (s *Snapshot) calPayProfit(db ethdb.Database, header *types.Header) ([]consensus.GrantProfitRecord, error) {
 	var playGrantProfit []consensus.GrantProfitRecord
 	number := header.Number.Uint64()
 	if number == 0 {
@@ -2526,31 +2557,67 @@ func (s *Snapshot) calPayProfit(db ethdb.Database,header *types.Header) ([]conse
 		return s.FlowRevenue.BandwidthLock.calPayProfit(db, playGrantProfit, header)
 	}
 	if isPayPosPledgeExit(number, period) {
-		if s.FlowRevenue.PosPgExitLock!=nil {
+		if s.FlowRevenue.PosPgExitLock != nil {
 			log.Info("LockProfitSnap cal pay POS pledge exit amount")
 			return s.FlowRevenue.PosPgExitLock.calPayProfit(db, playGrantProfit, header)
 		}
 	}
 	if isPayPosExit(number, period) {
-		if s.FlowRevenue.PosExitLock!=nil {
+		if s.FlowRevenue.PosExitLock != nil {
 			log.Info("LockProfitSnap cal pay POS exit amount")
 			return s.FlowRevenue.PosExitLock.calPayProfit(db, playGrantProfit, header)
+		}
+	}
+	if isPaySTPEntrustExit(number, period) {
+		if s.FlowRevenue.STPEntrustExitLock != nil {
+			log.Info("LockProfitSnap cal pay STPEntrustExit amount")
+			return s.FlowRevenue.STPEntrustExitLock.calPayProfit(db, playGrantProfit, header)
+		}
+	}
+	if isPaySTPEntrust(number, period) {
+		if s.FlowRevenue.STPEntrustLock != nil {
+			log.Info("LockProfitSnap cal pay STPEntrust amount")
+			return s.FlowRevenue.STPEntrustLock.calPayProfit(db, playGrantProfit, header)
+		}
+	}
+	if isPaySpReWard(number, period) {
+		if s.FlowRevenue.SpLock != nil {
+			log.Info("LockProfitSnap cal SP Reward amount")
+			return s.FlowRevenue.SpLock.calPayProfit(db, playGrantProfit, header)
+		}
+	}
+	if isPaySpEntrustReWard(number, period) {
+		if s.FlowRevenue.SpEntrustLock != nil {
+			log.Info("LockProfitSnap cal SP Entrust Reward amount")
+			return s.FlowRevenue.SpEntrustLock.calPayProfit(db, playGrantProfit, header)
+		}
+	}
+	if isPaySpExit(number, period) {
+		if s.FlowRevenue.SpExitLock != nil {
+			log.Info("LockProfitSnap cal SP  Exit amount")
+			return s.FlowRevenue.SpExitLock.calPayProfit(db, playGrantProfit, header)
+		}
+	}
+	if isPaySpEntrustExit(number, period) {
+		if s.FlowRevenue.SpEntrustExitLock != nil {
+			log.Info("LockProfitSnap cal SP Entrust Exit amount")
+			return s.FlowRevenue.SpEntrustExitLock.calPayProfit(db, playGrantProfit, header)
 		}
 	}
 	return playGrantProfit, nil
 }
 
-func (snap *Snapshot) updateGrantProfit2(grantProfitHash common.Hash, db ethdb.Database, header *types.Header)(error) {
-	grantProfit,err := snap.calPayProfit(db, header)
-	if err!=nil{
+func (snap *Snapshot) updateGrantProfit2(grantProfitHash common.Hash, db ethdb.Database, header *types.Header) error {
+	grantProfit, err := snap.calPayProfit(db, header)
+	if err != nil {
 		return err
 	}
-	calGrantProfitHash:=snap.calGrantProfitHash(grantProfit)
-	if grantProfitHash!=calGrantProfitHash{
-		log.Error("grantProfitHash is not same","head",grantProfitHash.String(),"cal",calGrantProfitHash.String())
+	calGrantProfitHash := snap.calGrantProfitHash(grantProfit)
+	if grantProfitHash != calGrantProfitHash {
+		log.Error("grantProfitHash is not same", "head", grantProfitHash.String(), "cal", calGrantProfitHash.String())
 		return errors.New("grantProfitHash is not same,head:" + grantProfitHash.String() + "cal:" + calGrantProfitHash.String())
 	}
-	snap.updateGrantProfit(grantProfit,db,header.Hash(),header.Number.Uint64())
+	snap.updateGrantProfit(grantProfit, db, header.Hash(), header.Number.Uint64())
 	return nil
 }
 
@@ -2558,17 +2625,17 @@ func (snap *Snapshot) updateCandidatePledgeNew(candidatePledge []CandidatePledge
 	for _, item := range candidatePledge {
 		if _, ok := snap.PosPledge[item.Target]; !ok {
 			pledgeItem := &PosPledgeItem{
-				Manager:item.Manager,
-				Active:number,
-				TotalAmount:new(big.Int).Set(item.Amount),
-				Detail:make(map[common.Hash]*PledgeDetail,0),
-				LastPunish: uint64(0),
-				DisRate: new(big.Int).Set(posDistributionDefaultRate),
+				Manager:     item.Manager,
+				Active:      number,
+				TotalAmount: new(big.Int).Set(item.Amount),
+				Detail:      make(map[common.Hash]*PledgeDetail, 0),
+				LastPunish:  uint64(0),
+				DisRate:     new(big.Int).Set(posDistributionDefaultRate),
 			}
-			pledgeItem.Detail[item.Hash]=&PledgeDetail{
-				Address:item.Manager,
-				Height:number,
-				Amount:new(big.Int).Set(item.Amount),
+			pledgeItem.Detail[item.Hash] = &PledgeDetail{
+				Address: item.Manager,
+				Height:  number,
+				Amount:  new(big.Int).Set(item.Amount),
 			}
 			snap.PosPledge[item.Target] = pledgeItem
 		}
@@ -2584,12 +2651,12 @@ func (snap *Snapshot) updateCandidatePledgeNew(candidatePledge []CandidatePledge
 func (snap *Snapshot) updateCandidatePledgeEntrust(candidatePledge []CandidatePledgeEntrustRecord, number uint64) {
 	for _, item := range candidatePledge {
 		if _, ok := snap.PosPledge[item.Target]; ok {
-			snap.PosPledge[item.Target].Detail[item.Hash]=&PledgeDetail{
-				Address:item.Address,
-				Height:number,
-				Amount:item.Amount,
+			snap.PosPledge[item.Target].Detail[item.Hash] = &PledgeDetail{
+				Address: item.Address,
+				Height:  number,
+				Amount:  item.Amount,
 			}
-			snap.PosPledge[item.Target].TotalAmount=new(big.Int).Add(snap.PosPledge[item.Target].TotalAmount,item.Amount)
+			snap.PosPledge[item.Target].TotalAmount = new(big.Int).Add(snap.PosPledge[item.Target].TotalAmount, item.Amount)
 		}
 	}
 }
@@ -2598,31 +2665,31 @@ func (snap *Snapshot) updateCandidatePEntrustExit(candidatePledge []CandidatePEn
 	for _, item := range candidatePledge {
 		if _, ok := snap.PosPledge[item.Target]; ok {
 			if _, ok2 := snap.PosPledge[item.Target].Detail[item.Hash]; ok2 {
-				snap.PosPledge[item.Target].TotalAmount=new(big.Int).Sub(snap.PosPledge[item.Target].TotalAmount,item.Amount)
-				delete(snap.PosPledge[item.Target].Detail,item.Hash)
+				snap.PosPledge[item.Target].TotalAmount = new(big.Int).Sub(snap.PosPledge[item.Target].TotalAmount, item.Amount)
+				delete(snap.PosPledge[item.Target].Detail, item.Hash)
 				snap.FlowRevenue.PosExitLock.updatePosExitLockData(snap, item, headerNumber)
 			}
-			if !snap.isInTally(item.Target)&&snap.PosPledge[item.Target].TotalAmount.Cmp(common.Big0)<=0{
+			if !snap.isInTally(item.Target) && snap.PosPledge[item.Target].TotalAmount.Cmp(common.Big0) <= 0 {
 				snap.removePosPledge(item.Target)
 			}
 		}
 	}
 }
 func (snap *Snapshot) checkCandidateAutoExit(number uint64, candidateAutoExit []common.Address, state *state.StateDB, candidatePEntrustExit []CandidatePEntrustExitRecord) ([]common.Address, []CandidatePEntrustExitRecord) {
-	burnAmount:=common.Big0
+	burnAmount := common.Big0
 	if isCheckPOSAutoExit(number, snap.Period) {
-		for miner,item:=range snap.PosPledge{
-			if item.LastPunish>0&&(number-item.LastPunish)>=maxPosContinueDayFail*snap.getBlockPreDay(){
-				candidateAutoExit=append(candidateAutoExit,miner)
-				for hash,detail:=range snap.PosPledge[miner].Detail{
-					if detail.Address==item.Manager{
-						burnAmount=new(big.Int).Add(burnAmount,detail.Amount)
-					}else{
-						candidatePEntrustExit=append(candidatePEntrustExit,CandidatePEntrustExitRecord{
-							Target:miner,
-							Hash:hash,
+		for miner, item := range snap.PosPledge {
+			if item.LastPunish > 0 && (number-item.LastPunish) >= maxPosContinueDayFail*snap.getBlockPreDay() {
+				candidateAutoExit = append(candidateAutoExit, miner)
+				for hash, detail := range snap.PosPledge[miner].Detail {
+					if detail.Address == item.Manager {
+						burnAmount = new(big.Int).Add(burnAmount, detail.Amount)
+					} else {
+						candidatePEntrustExit = append(candidatePEntrustExit, CandidatePEntrustExitRecord{
+							Target:  miner,
+							Hash:    hash,
 							Address: detail.Address,
-							Amount:new (big.Int).Set(detail.Amount),
+							Amount:  new(big.Int).Set(detail.Amount),
 						})
 					}
 				}
@@ -2630,45 +2697,45 @@ func (snap *Snapshot) checkCandidateAutoExit(number uint64, candidateAutoExit []
 			}
 		}
 	}
-	if burnAmount.Cmp(common.Big0)>0{
-		state.AddBalance(common.BigToAddress(big.NewInt(0)),burnAmount)
+	if burnAmount.Cmp(common.Big0) > 0 {
+		state.AddBalance(common.BigToAddress(big.NewInt(0)), burnAmount)
 	}
 	return candidateAutoExit, candidatePEntrustExit
 }
 func (snap *Snapshot) updateCandidateAutoExit(candidateAutoExit []common.Address, header *types.Header, db ethdb.Database) {
-	if candidateAutoExit==nil ||len(candidateAutoExit)==0 {
+	if candidateAutoExit == nil || len(candidateAutoExit) == 0 {
 		return
 	}
 	for _, miner := range candidateAutoExit {
 		snap.removePosPledge(miner)
 		snap.removeTally(miner)
 	}
-	err:= snap.FlowRevenue.RewardLock.setRewardRemovePunish(candidateAutoExit, db, header.Hash(),header.Number.Uint64())
+	err := snap.FlowRevenue.RewardLock.setRewardRemovePunish(candidateAutoExit, db, header.Hash(), header.Number.Uint64())
 	if err != nil {
 		log.Warn("setRewardRemovePunish RewardLock Error", "err", err)
 	}
 }
 
 func (snap *Snapshot) isInPosCommitPeriod(minerAddress common.Address, number uint64) bool {
-	if (number-snap.PosPledge[minerAddress].Active)<=(snap.SystemConfig.Deposit[sscEnumPosCommitPeriod].Uint64()*snap.getBlockPreDay()) {
+	if (number - snap.PosPledge[minerAddress].Active) <= (snap.SystemConfig.Deposit[sscEnumPosCommitPeriod].Uint64() * snap.getBlockPreDay()) {
 		return true
 	}
 	return false
 }
 
 func (snap *Snapshot) isInPosCommitPeriodPass(minerAddress common.Address, number uint64, hash common.Hash, setting uint64) bool {
-	pledgeDetail:=snap.PosPledge[minerAddress].Detail[hash]
-	if (number-pledgeDetail.Height)<=(setting*snap.getBlockPreDay()){
+	pledgeDetail := snap.PosPledge[minerAddress].Detail[hash]
+	if (number - pledgeDetail.Height) <= (setting * snap.getBlockPreDay()) {
 		return true
 	}
 	return false
 }
 
 func (snap *Snapshot) findPosTargetMiner(txSender common.Address) common.Address {
-	for miner,item:=range snap.PosPledge{
-		details:=item.Detail
-		for _,detail:=range details{
-			if detail.Address==txSender{
+	for miner, item := range snap.PosPledge {
+		details := item.Detail
+		for _, detail := range details {
+			if detail.Address == txSender {
 				return miner
 			}
 		}
@@ -2683,111 +2750,111 @@ func (snap *Snapshot) updateCandidateChangeRate(candidateChangeRate []CandidateC
 		}
 	}
 }
-func (s *Snapshot) initPosPledge(number uint64){
-	for addr, _:= range s.Tally {
-		if _,ok:=s.PosPledge[addr];!ok{
-			lastPunish:=uint64(0)
-			if punishVal,ok1:=s.Punished[addr];ok1{
-				lastPunish=punishVal
+func (s *Snapshot) initPosPledge(number uint64) {
+	for addr, _ := range s.Tally {
+		if _, ok := s.PosPledge[addr]; !ok {
+			lastPunish := uint64(0)
+			if punishVal, ok1 := s.Punished[addr]; ok1 {
+				lastPunish = punishVal
 			}
-			managerAddr:=addr
-			if revenue,ok1:=s.RevenueNormal[addr];ok1 {
-				managerAddr=revenue.RevenueAddress
+			managerAddr := addr
+			if revenue, ok1 := s.RevenueNormal[addr]; ok1 {
+				managerAddr = revenue.RevenueAddress
 			}
 
-			s.PosPledge[addr]=&PosPledgeItem{
-				Manager:managerAddr,
-				Active:number,
-				TotalAmount :big.NewInt(0),
-				LastPunish:lastPunish,
-				DisRate: new(big.Int).Set(posDistributionDefaultRate),
-				Detail: make(map[common.Hash]*PledgeDetail),
+			s.PosPledge[addr] = &PosPledgeItem{
+				Manager:     managerAddr,
+				Active:      number,
+				TotalAmount: big.NewInt(0),
+				LastPunish:  lastPunish,
+				DisRate:     new(big.Int).Set(posDistributionDefaultRate),
+				Detail:      make(map[common.Hash]*PledgeDetail),
 			}
-			if pledgeItem,ok1:=s.CandidatePledge[addr];ok1 && pledgeItem.StartHigh <= 0{
-				s.PosPledge[addr].TotalAmount=pledgeItem.Amount
-				s.PosPledge[addr].Detail[common.HexToHash(managerAddr.String())]=&PledgeDetail{
-					Address:managerAddr,
-					Height:number,
-					Amount:pledgeItem.Amount,
+			if pledgeItem, ok1 := s.CandidatePledge[addr]; ok1 && pledgeItem.StartHigh <= 0 {
+				s.PosPledge[addr].TotalAmount = pledgeItem.Amount
+				s.PosPledge[addr].Detail[common.HexToHash(managerAddr.String())] = &PledgeDetail{
+					Address: managerAddr,
+					Height:  number,
+					Amount:  pledgeItem.Amount,
 				}
 			}
-			if _,ok2:=s.TallyMiner[addr];ok2{
+			if _, ok2 := s.TallyMiner[addr]; ok2 {
 				delete(s.TallyMiner, addr)
 			}
 		}
 	}
-	for addr,_ :=range s.TallyMiner {
-		lastPunish:=uint64(0)
-		if punishVal,ok1:=s.Punished[addr];ok1{
-			lastPunish=punishVal
+	for addr, _ := range s.TallyMiner {
+		lastPunish := uint64(0)
+		if punishVal, ok1 := s.Punished[addr]; ok1 {
+			lastPunish = punishVal
 		}
-		managerAddr:=addr
-		if revenue,ok1:=s.RevenueNormal[addr];ok1 {
-			managerAddr=revenue.RevenueAddress
+		managerAddr := addr
+		if revenue, ok1 := s.RevenueNormal[addr]; ok1 {
+			managerAddr = revenue.RevenueAddress
 		}
-		s.PosPledge[addr]=&PosPledgeItem{
-			Manager:managerAddr,
-			Active:number,
-			TotalAmount :big.NewInt(0),
-			LastPunish:lastPunish,
-			DisRate: new(big.Int).Set(posDistributionDefaultRate),
-			Detail: make(map[common.Hash]*PledgeDetail),
+		s.PosPledge[addr] = &PosPledgeItem{
+			Manager:     managerAddr,
+			Active:      number,
+			TotalAmount: big.NewInt(0),
+			LastPunish:  lastPunish,
+			DisRate:     new(big.Int).Set(posDistributionDefaultRate),
+			Detail:      make(map[common.Hash]*PledgeDetail),
 		}
-		if pledgeItem,ok1:=s.CandidatePledge[addr];ok1 && pledgeItem.StartHigh <= 0{
-			s.PosPledge[addr].TotalAmount=pledgeItem.Amount
-			s.PosPledge[addr].Detail[common.HexToHash(managerAddr.String())]=&PledgeDetail{
-				Address:managerAddr,
-				Height:number,
-				Amount:pledgeItem.Amount,
+		if pledgeItem, ok1 := s.CandidatePledge[addr]; ok1 && pledgeItem.StartHigh <= 0 {
+			s.PosPledge[addr].TotalAmount = pledgeItem.Amount
+			s.PosPledge[addr].Detail[common.HexToHash(managerAddr.String())] = &PledgeDetail{
+				Address: managerAddr,
+				Height:  number,
+				Amount:  pledgeItem.Amount,
 			}
 		}
 	}
 
 }
 
-func (s *Snapshot) updatePosPledgePunish(address common.Address, punishNumber uint64,headerNumber uint64){
+func (s *Snapshot) updatePosPledgePunish(address common.Address, punishNumber uint64, headerNumber uint64) {
 	if headerNumber > PosNewEffectNumber {
-		if item,ok:=s.PosPledge[address];ok{
-			if punishNumber == 0 && item.LastPunish >0 {
-				item.LastPunish=0
+		if item, ok := s.PosPledge[address]; ok {
+			if punishNumber == 0 && item.LastPunish > 0 {
+				item.LastPunish = 0
 			}
-			if punishNumber > 0 && item.LastPunish == 0{
-				item.LastPunish=punishNumber
+			if punishNumber > 0 && item.LastPunish == 0 {
+				item.LastPunish = punishNumber
 			}
 
 		}
 	}
 }
-func (s *Snapshot) checkPosPledgePunish(address common.Address,headerNumber uint64){
+func (s *Snapshot) checkPosPledgePunish(address common.Address, headerNumber uint64) {
 	if headerNumber > PosNewEffectNumber {
-		if pledge,ok1:=s.PosPledge[address];ok1{
-			if _,ok2:=s.Punished[address];ok2{
-				if pledge.LastPunish == 0{
-					pledge.LastPunish=headerNumber
+		if pledge, ok1 := s.PosPledge[address]; ok1 {
+			if _, ok2 := s.Punished[address]; ok2 {
+				if pledge.LastPunish == 0 {
+					pledge.LastPunish = headerNumber
 				}
-			}else{
-				if pledge.LastPunish > 0{
-					pledge.LastPunish=0
+			} else {
+				if pledge.LastPunish > 0 {
+					pledge.LastPunish = 0
 				}
 			}
 		}
 	}
 }
-func (s *Snapshot) updateTallyMiner(addr common.Address){
+func (s *Snapshot) updateTallyMiner(addr common.Address) {
 
-	if item,ok1:=s.PosPledge[addr];ok1{
-		if _,ok:=s.Tally[addr];ok{
-			s.Tally[addr]=item.TotalAmount
+	if item, ok1 := s.PosPledge[addr]; ok1 {
+		if _, ok := s.Tally[addr]; ok {
+			s.Tally[addr] = item.TotalAmount
 		}
-		if _,ok:=s.TallyMiner[addr];ok{
-			s.TallyMiner[addr].Stake=item.TotalAmount
+		if _, ok := s.TallyMiner[addr]; ok {
+			s.TallyMiner[addr].Stake = item.TotalAmount
 		}
 
 	}
 }
 
 func (s *Snapshot) fixStorageRevertRevenue(header *types.Header, db ethdb.Database) {
-	err:= s.FlowRevenue.PosPgExitLock.fixStorageRevertRevenue(db, header.Hash(),header.Number.Uint64())
+	err := s.FlowRevenue.PosPgExitLock.fixStorageRevertRevenue(db, header.Hash(), header.Number.Uint64())
 	if err != nil {
 		log.Warn("fixStorageRevertRevenue Error", "err", err)
 	}
@@ -2805,18 +2872,18 @@ func (snap *Snapshot) removePosPledge(miner common.Address) {
 	}
 }
 
-func (s *Snapshot) deletePunishByPosExit(headerNumber uint64){
-	if headerNumber >= PosNewEffectNumber{
-		for punishAddr,_:= range s.Punished {
-			if _, ok := s.PosPledge[punishAddr];!ok {
-				delete(s.Punished,punishAddr)
+func (s *Snapshot) deletePunishByPosExit(headerNumber uint64) {
+	if headerNumber >= PosNewEffectNumber {
+		for punishAddr, _ := range s.Punished {
+			if _, ok := s.PosPledge[punishAddr]; !ok {
+				delete(s.Punished, punishAddr)
 			}
 		}
 	}
 }
 
 func (s *Snapshot) isInTally(minerAddress common.Address) bool {
-	if _,ok:=s.Tally[minerAddress];ok {
+	if _, ok := s.Tally[minerAddress]; ok {
 		return true
 	}
 	return false
@@ -2838,23 +2905,23 @@ func (snap *Snapshot) removeTally(miner common.Address) {
 }
 
 func (snap *Snapshot) initPosExitPunish(header *types.Header, db ethdb.Database) {
-	delAddress:=make([]common.Address,0)
-	exitAddress:=make([]common.Address,0)
+	delAddress := make([]common.Address, 0)
+	exitAddress := make([]common.Address, 0)
 	for address, item := range snap.CandidatePledge {
-		if item.StartHigh > 0{
-			item.BurnRatio=new(big.Int).Set(BurnBase)
-			item.BurnAmount=common.Big0
-			exitAddress=append(exitAddress,address)
-		}else{
-			delAddress=append(delAddress,address)
+		if item.StartHigh > 0 {
+			item.BurnRatio = new(big.Int).Set(BurnBase)
+			item.BurnAmount = common.Big0
+			exitAddress = append(exitAddress, address)
+		} else {
+			delAddress = append(delAddress, address)
 		}
 	}
-	err:= snap.FlowRevenue.RewardLock.setRewardRemovePunish(exitAddress, db, header.Hash(),header.Number.Uint64())
+	err := snap.FlowRevenue.RewardLock.setRewardRemovePunish(exitAddress, db, header.Hash(), header.Number.Uint64())
 	if err != nil {
 		log.Warn("setRewardRemovePunish RewardLock Error", "err", err)
 	}
-	for _,address:= range delAddress{
-		delete(snap.CandidatePledge,address)
+	for _, address := range delAddress {
+		delete(snap.CandidatePledge, address)
 	}
 }
 
@@ -2862,12 +2929,12 @@ func (snap *Snapshot) isSystemManager(txSender common.Address) bool {
 	return snap.SystemConfig.ManagerAddress[sscEnumSystem] == txSender
 }
 
-func (snap *Snapshot) isSystemManagerAndInTally(txSender common.Address,minerAddress common.Address) bool {
-	return snap.isSystemManager(txSender)&&snap.isInTally(minerAddress)
+func (snap *Snapshot) isSystemManagerAndInTally(txSender common.Address, minerAddress common.Address) bool {
+	return snap.isSystemManager(txSender) && snap.isInTally(minerAddress)
 }
 
 func (snap *Snapshot) updateCandidateExit2(candidateExit []common.Address, number *big.Int) {
-	if candidateExit==nil || len(candidateExit)==0 {
+	if candidateExit == nil || len(candidateExit) == 0 {
 		return
 	}
 	for _, miner := range candidateExit {
@@ -2877,8 +2944,8 @@ func (snap *Snapshot) updateCandidateExit2(candidateExit []common.Address, numbe
 }
 
 func (snap *Snapshot) isPosMinerManager(target common.Address) bool {
-	for _,item:=range snap.PosPledge{
-		if item.Manager==target{
+	for _, item := range snap.PosPledge {
+		if item.Manager == target {
 			return true
 		}
 	}
@@ -2886,9 +2953,114 @@ func (snap *Snapshot) isPosMinerManager(target common.Address) bool {
 }
 
 func (snap *Snapshot) initPosExitPunishFix() {
-	for _,item:=range snap.PosPledge{
-		if item.LastPunish>0&&item.LastPunish<(PosNewEffectNumber-1){
-			item.LastPunish=PosNewEffectNumber-1
+	for _, item := range snap.PosPledge {
+		if item.LastPunish > 0 && item.LastPunish < (PosNewEffectNumber-1) {
+			item.LastPunish = PosNewEffectNumber - 1
 		}
 	}
 }
+
+func (snap *Snapshot) updateTotalLeaseSpace(curLeaseSpace *big.Int) {
+	if curLeaseSpace != nil && 0 < curLeaseSpace.Cmp(big.NewInt(0)) {
+		if nil == snap.TotalLeaseSpace {
+			snap.TotalLeaseSpace = new(big.Int).Set(curLeaseSpace)
+		} else {
+			snap.TotalLeaseSpace = new(big.Int).Add(snap.TotalLeaseSpace, curLeaseSpace)
+		}
+	}
+}
+
+func (s *Snapshot) updatePOSTransfer(posTransferRecord []POSTransferRecord, number *big.Int) {
+	if len(posTransferRecord) == 0 {
+		return
+	}
+	spCount := 0
+	snCount := 0
+
+	for _, record := range posTransferRecord {
+		if TargetTypePos == record.TargetType {
+			if posItem, ok := s.PosPledge[record.Target]; ok {
+				posItem.Detail[record.PledgeHash] = &PledgeDetail{
+					Address: record.Address,
+					Height:  number.Uint64(),
+					Amount:  record.PledgeAmount,
+				}
+				posItem.TotalAmount = new(big.Int).Add(posItem.TotalAmount, record.PledgeAmount)
+			}
+		} else if TargetTypeSp == record.TargetType {
+			if targetSp, ok := s.SpData.PoolPledge[record.TargetHash]; ok {
+				targetSp.TotalAmount = new(big.Int).Add(targetSp.TotalAmount, record.PledgeAmount)
+				preCapacity := getCapacity(targetSp.TotalAmount)
+				if preCapacity.Cmp(targetSp.TotalCapacity) > 0 {
+					targetSp.TotalCapacity = preCapacity
+				}
+				if targetSp.Manager==record.Address{
+					targetSp.ManagerAmount=new(big.Int).Add(targetSp.ManagerAmount,record.PledgeAmount)
+				}
+				targetSp.EtDetail[record.PledgeHash] = &EntrustDetail{
+					Address: record.Address,
+					Height:  new(big.Int).Set(number),
+					Amount:  record.PledgeAmount,
+					Hash:    getHash(changeOxToUx(record.Address.String()) + record.PledgeAmount.String() + number.String()),
+				}
+				s.SpData.accumulateSpPledgelHash(record.TargetHash, false)
+				spCount++
+			}
+		} else if TargetTypeSn == record.TargetType {
+			if targetSn, ok := s.StorageData.StorageEntrust[record.Target]; ok {
+				targetSn.PledgeAmount = new(big.Int).Add(targetSn.PledgeAmount, record.PledgeAmount)
+				targetSn.Detail[record.PledgeHash] = &SEntrustDetail{
+					Address: record.Address,
+					Height:  new(big.Int).Set(number),
+					Amount:  record.PledgeAmount,
+				}
+				if record.Address==targetSn.Manager{
+					targetSn.ManagerAmount=new(big.Int).Add(targetSn.ManagerAmount,record.PledgeAmount)
+					targetSn.Managerheight=new(big.Int).Set(number)
+				}
+				if stp, ok1 := s.StorageData.StoragePledge[record.Target]; ok1 {
+					if targetSn.PledgeAmount.Cmp(stp.SpaceDeposit)>=0&&stp.PledgeStatus.Cmp(big.NewInt(SPledgeInactive))==0{
+						s.StorageData.StoragePledge[record.Target].PledgeStatus=big.NewInt(SPledgeNormal)
+						s.StorageData.accumulatePledgeHash(record.Target)
+					}
+				}
+			}
+			snCount++
+		}
+		if se, ok := s.PosPledge[record.Original]; ok {
+			delHash := make([]common.Hash, 0)
+			for etHash, detail := range se.Detail {
+				if record.Address == detail.Address {
+					delHash = append(delHash, etHash)
+				}
+			}
+			for _, removeHash := range delHash {
+				delete(se.Detail, removeHash)
+			}
+			se.TotalAmount = new(big.Int).Sub(se.TotalAmount, new(big.Int).Add(record.LockAmount, record.PledgeAmount))
+			if record.LockAmount.Cmp(common.Big0)>0{
+				s.FlowRevenue.PosExitLock.updatePosTransferLockData(s, record, number)
+			}
+		}
+		if spCount > 0 {
+			s.SpData.accumulateSpDataHash()
+		}
+		if snCount > 0 {
+			
+		}
+
+	}
+}
+
+func (snap *Snapshot) findSPTargetMiner(txSender common.Address) common.Hash {
+	for pool, item := range snap.SpData.PoolPledge {
+		details := item.EtDetail
+		for _, detail := range details {
+			if detail.Address == txSender {
+				return pool
+			}
+		}
+	}
+	return common.Hash{}
+}
+

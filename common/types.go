@@ -63,7 +63,7 @@ func BigToHash(b *big.Int) Hash { return BytesToHash(b.Bytes()) }
 // HexToHash sets byte representation of s to hash.
 // If b is larger than len(h), b will be cropped from the left.
 func HexToHash(s string) Hash {
-	s = hexutil.CPToHex(s) 
+	s = hexutil.CPToHex(s)
 	return BytesToHash(FromHex(s))
 }
 
@@ -125,6 +125,10 @@ func (h Hash) Format(s fmt.State, c rune) {
 func (h *Hash) UnmarshalText(input []byte) error {
 	s := hexutil.CPToHex(string(input))
 	return hexutil.UnmarshalFixedText("Hash", []byte(s), h[:])
+}
+func (h *Hash) UnmarshalText1(input []byte) error {
+	s := hexutil.CPToHex(string(input))
+	return hexutil.UnmarshalFixedText1("Hash", []byte(s), h[:])
 }
 
 // UnmarshalJSON parses a hash in hex syntax.

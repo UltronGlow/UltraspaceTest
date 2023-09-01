@@ -22,6 +22,7 @@ import (
 	"container/list"
 	"errors"
 	"fmt"
+	lru "github.com/hashicorp/golang-lru"
 	"io"
 	"math"
 	"math/big"
@@ -41,7 +42,6 @@ import (
 	"github.com/UltronGlow/UltronGlow-Origin/rlp"
 	"github.com/UltronGlow/UltronGlow-Origin/rpc"
 	"github.com/UltronGlow/UltronGlow-Origin/trie"
-	"github.com/hashicorp/golang-lru"
 	"github.com/shopspring/decimal"
 	"golang.org/x/crypto/sha3"
 )
@@ -79,10 +79,10 @@ var (
 	proposalDeposit                  = new(big.Int).Mul(big.NewInt(1e+18), big.NewInt(1e+4))             // default current proposalDeposit
 	scRentLengthRecommend            = uint64(0)                                                         // block number for split each side chain rent fee
 	managerAddressExchRate           = common.HexToAddress("ux8e4dB3E0AB9942890974C6860bd9BF7785817012") ////TODO seaskycheng
-    managerAddressSystem             = common.HexToAddress("uxf8891B90305ca6aaD69687E1420a5B2930aF4b4E") ////TODO seaskycheng
-    managerAddressWdthPnsh           = common.HexToAddress("ux245Ee49D3Def85c29FA34b79ab2405591D937a44") ////TODO seaskycheng
-    managerAddressFlowReport         = common.HexToAddress("uxfDd486d7CfEc04d8468d4cC2F821a53144918F05") ////TODO seaskycheng
-    managerAddressManager            = common.HexToAddress("ux02C37850bDa531EcBb7edADF30DBadd89Ad5A824") ////TODO seaskycheng
+	managerAddressSystem             = common.HexToAddress("uxf8891B90305ca6aaD69687E1420a5B2930aF4b4E") ////TODO seaskycheng
+	managerAddressWdthPnsh           = common.HexToAddress("ux245Ee49D3Def85c29FA34b79ab2405591D937a44") ////TODO seaskycheng
+	managerAddressFlowReport         = common.HexToAddress("uxfDd486d7CfEc04d8468d4cC2F821a53144918F05") ////TODO seaskycheng
+	managerAddressManager            = common.HexToAddress("ux02C37850bDa531EcBb7edADF30DBadd89Ad5A824") ////TODO seaskycheng
 )
 
 // Various error messages to mark blocks invalid. These should be private to
@@ -386,8 +386,8 @@ func (a *Alien) snapshot(chain consensus.ChainHeaderReader, number uint64, hash 
 				log.Trace("Loaded voting snapshot from disk", "number", number, "hash", hash)
 				snap = s
 				break
-			}else{
-				log.Debug("Loaded voting snapshot from disk","number", number,"err",err)
+			} else {
+				log.Debug("Loaded voting snapshot from disk", "number", number, "err", err)
 			}
 		}
 		// If we're at block zero, make a snapshot
@@ -428,7 +428,7 @@ func (a *Alien) snapshot(chain consensus.ChainHeaderReader, number uint64, hash 
 		headers[i], headers[len(headers)-1-i] = headers[len(headers)-1-i], headers[i]
 	}
 
-	snap, err := snap.apply(headers, a.db,chain)
+	snap, err := snap.apply(headers, a.db, chain)
 	if err != nil {
 		return nil, err
 	}
@@ -623,45 +623,6 @@ func (a *Alien) verifySeal(chain consensus.ChainHeaderReader, state *state.State
 		}
 	}
 
-	return nil
-}
-
-func (a *Alien) VerifyLockReward(header *types.Header, snap *Snapshot, chain consensus.ChainHeaderReader, currentHeaderExtra HeaderExtra) error {
-	lockRewards := []LockRewardRecord{}
-	if a.isAccumulateFlowRewards(header.Number.Uint64()) {
-		lockRewards, _ = accumulateFlowRewards(lockRewards, snap, a.db)
-	} else if a.isAccumulateBandWidthRewards(header.Number.Uint64()) {
-		lockRewards, _ = accumulateBandwidthRewards(lockRewards, chain.Config(), header, snap, a.db)
-	}
-	// TODO accumulateRewards
-	//lockRewards = accumulateRewards(lockRewards, chain.Config(), header, snap)
-	if len(currentHeaderExtra.LockReward) != len(lockRewards) {
-		return errors.New("invalid lock reward")
-	}
-	for _, v1 := range lockRewards {
-		find := false
-		for _, v2 := range currentHeaderExtra.LockReward {
-			if v1.Amount.Cmp(v2.Amount) == 0 && v1.FlowValue1 == v2.FlowValue1 && v1.FlowValue2 == v2.FlowValue2 && v1.IsReward == v2.IsReward && v1.Target == v2.Target {
-				find = true
-				break
-			}
-		}
-		if !find {
-			return errors.New("invalid lock reward")
-		}
-	}
-	for _, v1 := range currentHeaderExtra.LockReward {
-		find := false
-		for _, v2 := range lockRewards {
-			if v1.Amount.Cmp(v2.Amount) == 0 && v1.FlowValue1 == v2.FlowValue1 && v1.FlowValue2 == v2.FlowValue2 && v1.IsReward == v2.IsReward && v1.Target == v2.Target {
-				find = true
-				break
-			}
-		}
-		if !find {
-			return errors.New("invalid lock reward")
-		}
-	}
 	return nil
 }
 
@@ -1041,11 +1002,11 @@ func (a *Alien) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 
 		// play pledge
 		currentHeaderExtra.GrantProfit = []consensus.GrantProfitRecord{}
-		if nil != grantProfit{
+		if nil != grantProfit {
 			currentHeaderExtra.GrantProfit = append(currentHeaderExtra.GrantProfit, grantProfit...)
 		}
 		if number >= PosrIncentiveEffectNumber {
-			currentHeaderExtra.GrantProfitHash=snap.calGrantProfitHash(currentHeaderExtra.GrantProfit)
+			currentHeaderExtra.GrantProfitHash = snap.calGrantProfitHash(currentHeaderExtra.GrantProfit)
 			currentHeaderExtra.GrantProfit = []consensus.GrantProfitRecord{}
 		}
 		flowHarvest := big.NewInt(0)
@@ -1060,13 +1021,14 @@ func (a *Alien) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 		for proposer, refund := range snap.calculateProposalRefund() {
 			state.AddBalance(proposer, refund)
 		}
-		if es!=nil {
+		if es != nil {
 			harvest := big.NewInt(0)
 			var revertSrt []ExchangeSRTRecord
 			snap1 := snap.copy()
-			leftAmount:=common.Big0
-			currentHeaderExtra.LockReward, revertSrt, harvest,err,leftAmount = snap1.storageVerificationCheck(header.Number.Uint64(), snap1.getBlockPreDay(), a.db, currentHeaderExtra.LockReward,state)
-			if err!=nil {
+			leftAmount := common.Big0
+			curLeaseSpace := common.Big0
+			currentHeaderExtra.LockReward, revertSrt, harvest, err, leftAmount, curLeaseSpace = snap1.storageVerificationCheck(header.Number.Uint64(), snap1.getBlockPreDay(), a.db, currentHeaderExtra.LockReward, state)
+			if err != nil {
 				return err
 			}
 			if nil != revertSrt {
@@ -1079,8 +1041,17 @@ func (a *Alien) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 					currentHeaderExtra.FlowHarvest = new(big.Int).Add(currentHeaderExtra.FlowHarvest, harvest)
 				}
 			}
+			if isGEInitStorageManagerNumber(number) {
+				snap1.accumulateSpExitBurnAmount(header.Number, state)
+				if isSpVerificationCheck(header.Number.Uint64(), snap.Period) {
+					snap1.spAccumulatePublish(header.Number)
+				}
+				if isSpDelExit(header.Number.Uint64(), snap.Period) {
+					snap1.dealSpExitFinalize(header.Number, header.Hash())
+				}
+			}
 
-			currentHeaderExtra.LockReward ,err= es.AddLockReward(currentHeaderExtra.LockReward, snap1,a.db,number)
+			currentHeaderExtra.LockReward, err = es.AddLockReward(currentHeaderExtra.LockReward, snap1, a.db, number)
 			if err != nil {
 				return err
 			}
@@ -1094,27 +1065,40 @@ func (a *Alien) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 				log.Info("extrastate commit failed", "error", err)
 				return err
 			}
+
 			currentHeaderExtra.ExtraStateRoot = stateRoot
 			currentHeaderExtra.LockAccountsRoot = lockAccountRoot
 			currentHeaderExtra.StorageDataRoot = snap1.StorageData.Hash
-			if leftAmount!=nil &&leftAmount.Cmp(common.Big0)>0{
-				state.AddBalance(common.BigToAddress(big.NewInt(0)),leftAmount)
+			if snap1.SpData != nil {
+				currentHeaderExtra.SpDataRoot = snap1.SpData.Hash
+			}
+			if leftAmount != nil && leftAmount.Cmp(common.Big0) > 0 {
+				state.AddBalance(common.BigToAddress(big.NewInt(0)), leftAmount)
 			}
 			log.Info("extrastate commit", "number", number, "esstateRoot", stateRoot, "lockaccountsRoot", lockAccountRoot)
-			if header.Number.Uint64() >=PledgeRevertLockEffectNumber {
+			if header.Number.Uint64() >= PledgeRevertLockEffectNumber {
 				currentHeaderExtra.SRTDataRoot = snap1.SRT.Root()
 			}
-			if isGEPOSNewEffect(number){
-				currentHeaderExtra.CandidateAutoExit,currentHeaderExtra.CandidatePEntrustExit=snap1.checkCandidateAutoExit(header.Number.Uint64(),currentHeaderExtra.CandidateAutoExit,state,currentHeaderExtra.CandidatePEntrustExit)
+			if isGEPOSNewEffect(number) {
+				currentHeaderExtra.CandidateAutoExit, currentHeaderExtra.CandidatePEntrustExit = snap1.checkCandidateAutoExit(header.Number.Uint64(), currentHeaderExtra.CandidateAutoExit, state, currentHeaderExtra.CandidatePEntrustExit)
+			}
+			if isGEPoCrsAccCalNumber(number) {
+				if nil != curLeaseSpace && curLeaseSpace.Cmp(common.Big0) > 0 {
+					if nil == currentHeaderExtra.CurLeaseSpace {
+						currentHeaderExtra.CurLeaseSpace = new(big.Int).Set(curLeaseSpace)
+					} else {
+						currentHeaderExtra.CurLeaseSpace = new(big.Int).Add(currentHeaderExtra.CurLeaseSpace, curLeaseSpace)
+					}
+				}
 			}
 		}
 
-		a.RepairBal(state,number)
+		a.RepairBal(state, number)
 		if number%(snap.config.MaxSignerCount*snap.LCRS) == (snap.config.MaxSignerCount*snap.LCRS - 1) {
 			if number > tallyRevenueEffectBlockNumber {
 				if number < PosNewEffectNumber {
 					currentHeaderExtra.ModifyPredecessorVotes = snap.updateTallyState(state)
-				}else{
+				} else {
 					currentHeaderExtra.ModifyPredecessorVotes = snap.updateTallyStateV2()
 				}
 
@@ -1122,7 +1106,7 @@ func (a *Alien) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 			if number >= MinerUpdateStateFixBlockNumber {
 				if number < PosNewEffectNumber {
 					currentHeaderExtra.MinerStake = snap.updateMinerState(state)
-				}else{
+				} else {
 					currentHeaderExtra.MinerStake = snap.updateMinerStateV2()
 				}
 			}
@@ -1308,7 +1292,7 @@ func (a *Alien) APIs(chain consensus.ChainHeaderReader) []rpc.API {
 	return []rpc.API{{
 		Namespace: "alien",
 		Version:   ufoVersion,
-		Service:   &API{chain: chain, alien: a,sCache: list.New()},
+		Service:   &API{chain: chain, alien: a, sCache: list.New()},
 		Public:    false,
 	}}
 }
@@ -1421,18 +1405,18 @@ func paymentPledge(hasContract bool, pledge *PledgeItem, state *state.StateDB, h
 	}
 	zeroHash := common.BigToAddress(big.NewInt(0))
 	payAddress := nilHash
-	if !hasContract || isRevenueContractNil(pledge,header.Number.Uint64()) {
+	if !hasContract || isRevenueContractNil(pledge, header.Number.Uint64()) {
 		if nilHash == pledge.MultiSignature || zeroHash == pledge.MultiSignature {
 			payAddress = pledge.RevenueAddress
 		} else {
 			payAddress = pledge.MultiSignature
 		}
 		if isGrantProfitOneTimeBlockNumber(header) {
-			payAmount:=new(big.Int).Set(amount)
-			burnAmount:=calBurnAmount(pledge,amount)
-			if burnAmount.Cmp(common.Big0)>0{
+			payAmount := new(big.Int).Set(amount)
+			burnAmount := calBurnAmount(pledge, amount)
+			if burnAmount.Cmp(common.Big0) > 0 {
 				addPayAddressBalance(pledge.BurnAddress, payAddressAll, burnAmount)
-				payAmount=new(big.Int).Sub(payAmount,burnAmount)
+				payAmount = new(big.Int).Sub(payAmount, burnAmount)
 			}
 			addPayAddressBalance(payAddress, payAddressAll, payAmount)
 			return 0, amount
@@ -1446,7 +1430,7 @@ func paymentPledge(hasContract bool, pledge *PledgeItem, state *state.StateDB, h
 	return 1, amount
 }
 
-func calPaymentPledge( pledge *PledgeItem,header *types.Header) (*big.Int) {
+func calPaymentPledge(pledge *PledgeItem, header *types.Header) *big.Int {
 	if 0 == pledge.StartHigh {
 		return nil
 	}
@@ -1458,7 +1442,7 @@ func calPaymentPledge( pledge *PledgeItem,header *types.Header) (*big.Int) {
 	if amount.Cmp(big.NewInt(0)) <= 0 {
 		return nil
 	}
-	return  amount
+	return amount
 }
 
 func nYearBandwidthReward(n float64) decimal.Decimal {
@@ -1495,39 +1479,8 @@ func accumulateBandwidthRewards(currentLockReward []LockRewardRecord, config *pa
 	}
 	return currentLockReward, flowHarvest
 }
-func accumulateFlowRewards(currentLockReward []LockRewardRecord, snap *Snapshot, db ethdb.Database) ([]LockRewardRecord, *big.Int) {
-	totalFlow := big.NewInt(0)
-	flowcensus := snap.FlowMiner.accumulateFlows(db)
-	flowHarvest := big.NewInt(0)
-	for minerAddress, bandwidth := range flowcensus {
-		if claimed, ok := snap.Bandwidth[minerAddress]; ok {
-			validFlow := bandwidth.FlowValue1
-			if validFlow <= 0 {
-				continue
-			}
-			reward := big.NewInt(0)
-			bandwidthHigh := uint64(claimed.BandwidthClaimed) * uint64(24*60*60)
 
-			if bandwidth.FlowValue1 > bandwidthHigh {
-				validFlow = bandwidthHigh
-			}
-			totalFlow = new(big.Int).Add(totalFlow, new(big.Int).SetUint64(validFlow))
-			rewardScale := getFlowRewardScale(decimal.NewFromBigInt(new(big.Int).Add(snap.FlowTotal, totalFlow), 0))
-			reward = decimal.NewFromBigInt(new(big.Int).SetUint64(validFlow), 0).Mul(rewardScale).BigInt()
-			flowHarvest = new(big.Int).Add(flowHarvest, reward)
-			currentLockReward = append(currentLockReward, LockRewardRecord{
-				Target:     minerAddress,
-				Amount:     new(big.Int).Set(reward),
-				IsReward:   sscEnumFlwReward,
-				FlowValue1: bandwidth.FlowValue1,
-				FlowValue2: validFlow,
-			})
-		}
-	}
-	return currentLockReward, flowHarvest
-}
-
-//Which EB is the current flow obtained
+// Which EB is the current flow obtained
 func getFlowRewardScale(flowTotal decimal.Decimal) decimal.Decimal {
 	totalEb := flowTotal.Div(decimal.NewFromInt(1073741824 * 1024))
 	var nebCount = totalEb.Round(0)
@@ -1603,10 +1556,10 @@ func accumulateRewards(currentLockReward []LockRewardRecord, config *params.Chai
 		})
 	} else if 0 < balance.Cmp(gasReward) {
 		state.SubBalance(header.Coinbase, gasReward)
-		if isGTPOSRNewCalEffect(header.Number.Uint64()){
-			halfGasReward:=new(big.Int).Div(gasReward,common.Big2)
-			state.AddBalance(common.BigToAddress(big.NewInt(0)),halfGasReward)
-			gasReward=new(big.Int).Sub(gasReward,halfGasReward)
+		if isGTPOSRNewCalEffect(header.Number.Uint64()) {
+			halfGasReward := new(big.Int).Div(gasReward, common.Big2)
+			state.AddBalance(common.BigToAddress(big.NewInt(0)), halfGasReward)
+			gasReward = new(big.Int).Sub(gasReward, halfGasReward)
 		}
 		minerReward = new(big.Int).Add(minerReward, gasReward)
 		currentLockReward = append(currentLockReward, LockRewardRecord{
@@ -1730,7 +1683,7 @@ func doVerifyHeaderExtra(header *types.Header, verifyExtra []byte, a *Alien) err
 }
 
 func addPayAddressBalance(addBalanceAddress common.Address, payAddressAll map[common.Address]*big.Int, amount *big.Int) {
-	if amount.Cmp(common.Big0)<=0{
+	if amount.Cmp(common.Big0) <= 0 {
 		return
 	}
 	if _, ok := payAddressAll[addBalanceAddress]; !ok {
@@ -1759,11 +1712,16 @@ func isGrantProfitOneTimeBlockNumber(header *types.Header) bool {
 }
 
 func isRevenueContractNil(pledge *PledgeItem, number uint64) bool {
-	if isGEPOSNewEffect(number)&&(pledge.PledgeType==sscEnumSignerReward||pledge.PledgeType==sscEnumPosExitLock){
+	if isGEInitStorageManagerNumber(number) && (pledge.PledgeType == sscEnumSTEntrustExitLock || pledge.PledgeType == sscEnumSTEntrustLockReward || pledge.PledgeType == sscSpLockReward || pledge.PledgeType == sscSpEntrustLockReward ||
+		pledge.PledgeType == sscSpEntrustExitLockReward || pledge.PledgeType == sscSpExitLockReward || pledge.PledgeType == sscEnumSignerReward || pledge.PledgeType == sscEnumPosExitLock) {
 		return true
-	}else{
-		nilHash := common.Address{}
-		zeroHash := common.BigToAddress(big.NewInt(0))
-		return nilHash == pledge.RevenueContract || zeroHash == pledge.RevenueContract
+	} else {
+		if isGEPOSNewEffect(number) && (pledge.PledgeType == sscEnumSignerReward || pledge.PledgeType == sscEnumPosExitLock) {
+			return true
+		} else {
+			nilHash := common.Address{}
+			zeroHash := common.BigToAddress(big.NewInt(0))
+			return nilHash == pledge.RevenueContract || zeroHash == pledge.RevenueContract
+		}
 	}
 }
